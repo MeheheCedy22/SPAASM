@@ -12,9 +12,6 @@ CODE SEGMENT
 ; DS -> Data Segment
 ASSUME CS:CODE, DS:DATA ; init CS, DS (assigning the beginnings of segments to individual segment registers)
 
-; print help
-P_HELP:
-
 ; clear screen procedure
 CLSREEN PROC
     MOV AX, 0003H ; alternativa AH,0 AL,03 ; sluzba videoBIOS
@@ -69,6 +66,9 @@ P_FILE MACRO FILENAME ; v dat. segmente je - FILENAME DB 'SUBOR.TXT', 0
 ; read file
 ; R_FILE
 
+; print help
+P_HELP:
+
 START:
     MOV AX,DATA
     MOV DS,AX
@@ -79,3 +79,39 @@ START:
     INT 21H        
 CODE ENDS
 END START
+
+
+
+
+
+; Zadanie č. [16]
+; Autor: Marek Čederle
+; Text zadania:
+; Napíšte program (v JSI) ktorý umožní používateľovi pomocou argumentov zadaných na príkazovom riadku pri spúšťaní programu vykonať pre zadaný súbor/súbory (vstup) vybranú funkciu. Ak bude zadaný prepínač '-h', program musí zobraziť informácie o programe a jeho použití. V programe vhodne použite makro s parametrom, ako aj vhodné volania OS (resp. BIOS) pre nastavenie kurzora, výpis reťazca, zmazanie obrazovky, prácu so súbormi a pod. Definície makier musia byť v samostatnom súbore. Program musí korektne spracovať súbory s dĺžkou aspoň do 64kB. Pri čítaní využite pole vhodnej veľkosti (buffer), pričom zo súboru do pamäte sa bude opakovane presúvať vždy (až na posledné čítanie) celá veľkosť poľa. Ošetrite chybové stavy. Program, respektíve každý zdrojový súbor, musí obsahovať primeranú technickú dokumentáciu.
+;   - Hlavna uloha:
+;       - 16. Vypísať riadky ktoré obsahujú slovo začínajúce veľkým písmenom a ich počet.
+;   - Volitelne ulohy:
+;       - 7. Plus 1 bod: Ak budú korektne spracované vstupné súbory s veľkosťou nad 64kB.
+;       - 8. Plus 1 bod: Prepínač '-r' spôsobí výpis v opačnom poradí (od konca).
+;       - 9. Plus 2 body: Ak bude možné zadať viacero vstupných súborov.
+;       - 10. Plus 2 body je možné získať ak pridelená úloha bude realizovaná ako externá procedúra (kompilovaná samostatne a prilinkovaná k výslednému programu).
+;       - 12. Plus 1 bod je možné získať za (dobré) komentáre, resp. dokumentáciu, v anglickom jazyku.
+
+
+; Termín odovzdávania: 23.03.2025 23:59
+; Ročník, ak. rok, semester, odbor: 3, 2024/2025, letný, informatika
+
+
+; sem umiestnite okomentovaný program
+
+
+
+; Zhodnotenie:
+; Uvediete, či je program funkčný - ak nie - prečo?, v akom prostredí bol
+; vypracovaný (nutné programové príp. technické vybavenie), chovanie programu
+; vzhľadom na vstupné údaje (sú obmedzenia?, mohol by program zlyhať pri
+; nesplnení nejakej podmienky?), predpoklady správnej funkčnosti, chovanie
+; programu vzhľadom na použité služby DOS resp. BIOS, opis možných vylepšení -
+; programové resp. technické, ak sú potrebné, popis použitých algoritmov,
+; upozornenie na taktiky a finty, ktoré použil tvorca programu, osobitosti
+; riešenia, prípadne použité zdroje.
