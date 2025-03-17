@@ -37,11 +37,11 @@ W_STR MACRO placeholder
     INT 21H
 ENDM
 
-; load file
+; open file
 ; Všetky služby pre prácu so súbormi používajú príznakový bit CF – carry ako výstupný
 ; parameter, ktorý informuje o tom, či sa služba vykonala bez chyby (CF=0) alebo nie
 ; (CF=1)
-L_FILE MACRO FILENAME
+O_FILE MACRO FILENAME
     MOV AH, 3DH ; služba – otvorí súbor podľa spôsobu prístupu v AL
     MOV AL, 0 ; AL 0-read only, 1-write only, 2-read/write
     MOV DX, OFFSET FILENAME ; v dat. segmente- FILENAME DB 'SUBOR.TXT', 0 alebo FILENAME DB 'C:\USERS\TEST.TXT ',0
@@ -66,7 +66,8 @@ P_FILE MACRO FILENAME ; v dat. segmente je - FILENAME DB 'SUBOR.TXT', 0
     ; Plnenie segm. registrov nejde priamo, preto MOV AX, SEG FILENAME
     ; MOV DS, AX
 
-
+; read file
+; R_FILE
 
 START:
     MOV AX,DATA
