@@ -1,4 +1,4 @@
-tasm /dzi main.asm
+tasm /d /zi main.asm
 tlink /v main.obj
-@REM tasm /dzi hlwrld.asm
+@REM tasm /d /zi hlwrld.asm
 @REM tlink /v hlwrld.obj

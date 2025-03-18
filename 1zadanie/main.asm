@@ -1,7 +1,7 @@
 BUFFSIZE EQU 64000 ; input buffer size
 
 DATA SEGMENT
-    HELP DB 'Author: Marek Cederle',10,13, 'Usage: MAIN.EXE [options] [files]',10,13, 'Options:',10,13, '  -h    Display this help message',10,13, '  -r    Display contents in reverse order',10,13, 'Files:',10,13, '  Specify one or more files to process.',10,13, 'Example: MAIN.EXE -r INPUT.TXT INPUT2.TXT','$'
+    HELP DB 'Author: Marek Cederle',10,13, 'Usage: MAIN.EXE [options] [files]',10,13, 'Options:',10,13, '  -h    Display this help message',10,13, '  -r    Display contents in reverse order',10,13, 'Files:',10,13, '  Specify one or more files to process.',10,13, 'Example: MAIN.EXE -r INPUT.TXT INPUT2.TXT',10,13, '$'
     FILENAME DB 'INPUT.TXT', 0 ; define input file name (max 8 chars)
     BUFF DB BUFFSIZE DUP ('$') ; allocate buffer for input data
     ; ESTR DB ‚ERROR OPENNING FILE$' ; error message if file open fails
@@ -78,19 +78,18 @@ ENDM
 
 ; handle command-line arguments
 HANDLE_ARGS PROC
-    ; Check for '-h' argument to display help
     MOV AX, 0 ; Initialize AX to zero
     MOV SI, 80H ; Command-line arguments start at 80h in PSP
-    MOV CX, [SI] ; Get the length of the command-line arguments
-    CMP CX, 0
+    MOV CL, ES:[SI] ; Get the length of the command-line arguments
+    CMP CL, 0
     JE NO_ARGS ; If no arguments are present, jump to NO_ARGS
     CALL SKIP_WHITESPACE
-    CMP BYTE PTR [SI], '-' ; Check for '-'
+    CMP BYTE PTR ES:[SI], '-' ; Check for '-'
     JNE NO_ARGS ; If not found, jump to NO_ARGS
     INC SI ; Move to the next character
-    CMP BYTE PTR [SI], 'h' ; Check for 'h'
+    CMP BYTE PTR ES:[SI], 'h' ; Check for 'h'
     JE ARGS_HELP
-    CMP BYTE PTR [SI], 'r' ; Check for 'r'
+    CMP BYTE PTR ES:[SI], 'r' ; Check for 'r'
     JE ARGS_REVERSE
     JMP ARGS_ERR ; If no valid arguments are found, jump to ARGS_ERR
 
@@ -119,7 +118,8 @@ HANDLE_ARGS PROC
 ENDP
 
 SKIP_WHITESPACE PROC
-    MOV AL, [SI] ; Load the current character into AL
+    INC SI ; Move to to first character
+    MOV AL, ES:[SI] ; Load the current character into AL
     WHITESPACE_LOOP:
         CMP AL, ' ' ; Check if the character is a space
         JE SKIP_CHAR ; If yes, skip it
@@ -133,7 +133,7 @@ SKIP_WHITESPACE PROC
 
     SKIP_CHAR:
         INC SI ; Move to the next character
-        MOV AL, [SI] ; Load the next character into AL
+        MOV AL, ES:[SI] ; Load the next character into AL
         JMP WHITESPACE_LOOP ; Repeat the loop
 
     END_SKIP:
