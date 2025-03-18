@@ -1,8 +1,9 @@
-BUFFSIZE EQU 64000 ; input buffer size
+model small
+
+BUFFSIZE EQU 32768 ; input buffer size
 
 DATA SEGMENT
     HELP DB 'Author: Marek Cederle',10,13, 'Usage: MAIN.EXE [options] [files]',10,13, 'Options:',10,13, '  -h    Display this help message',10,13, '  -r    Display contents in reverse order',10,13, 'Files:',10,13, '  Specify one or more files to process.',10,13, 'Example: MAIN.EXE -r INPUT.TXT INPUT2.TXT',10,13, '$'
-    FILENAME DB 'INPUT.TXT', 0 ; define input file name (max 8 chars)
     BUFF DB BUFFSIZE DUP ('$') ; allocate buffer for input data
     ; ESTR DB ‚ERROR OPENNING FILE$' ; error message if file open fails
     TEST_STR_NO_ARGS DB 'TEST_STRING_NO_ARGS', '$' ; test string
