@@ -7,6 +7,8 @@ data segment
 
 	buff db buffsize dup ('$') ; allocate buffer for input data
 
+    file_name db 32 dup(0), '$'		; buffer for file name
+	
 	args_error_msg db 'Invalid arguments. Use -h for help.', '$'
 	file_open_error_msg db 'Error opening file: ', '$'
 	file_read_error_msg db 'Error reading from file: ', '$'
@@ -89,6 +91,28 @@ skip_whitespace proc
 		ret
 endp
 
+; New procedure to parse a file name from command-line arguments.
+parse_filename proc
+    lea di, file_name       ; point DI to file_name buffer
+parse_loop:
+    mov al, es:[si]         ; load current character from command-line
+    cmp al, ' '             ; stop if space
+    je done
+    cmp al, 0dh             ; stop if carriage return
+    je done
+    cmp al, 0ah             ; stop if newline
+    je done
+    cmp al, 0               ; stop at end of string
+    je done
+    mov [di], al            ; store character in buffer
+    inc di
+    inc si
+    jmp parse_loop
+done:
+    mov byte ptr [di], 0    ; null terminate
+    ret
+parse_filename endp
+
 ; handle command-line arguments
 handle_args proc
 	mov ax, 0 					; initialize ax to zero
@@ -123,8 +147,14 @@ handle_args proc
 	no_args: 							; file processing without arguments
 		; default behavior
 		; ...
-		print_str test_str_no_args
-		jmp args_end
+		; print_str test_str_no_args
+		; jmp args_end
+
+		; default file processing:
+    	; call parse_filename to copy file name from command-line
+    	call parse_filename
+    	print_file_name file_name   ; display the parsed file name
+    	jmp args_end
 
 	args_end:
 		ret
