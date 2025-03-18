@@ -2,161 +2,167 @@ model small
 
 BUFFSIZE EQU 32768 ; input buffer size
 
-DATA SEGMENT
-    HELP DB 'Author: Marek Cederle',10,13, 'Usage: MAIN.EXE [options] [files]',10,13, 'Options:',10,13, '  -h    Display this help message',10,13, '  -r    Display contents in reverse order',10,13, 'Files:',10,13, '  Specify one or more files to process.',10,13, 'Example: MAIN.EXE -r INPUT.TXT INPUT2.TXT',10,13, '$'
-    BUFF DB BUFFSIZE DUP ('$') ; allocate buffer for input data
+data segment
+    help db 'Author: Name Surname',10,13, 'Usage: MAIN.EXE [options] [files]',10,13, 'Options:',10,13, '  -h    Display this help message',10,13, '  -r    Display contents in reverse order',10,13, 'Files:',10,13, '  Specify one or more files to process.',10,13, 'Example: MAIN.EXE -r INPUT.TXT INPUT2.TXT',10,13, '$'
+    buff db buffsize dup ('$') ; allocate buffer for input data
     ; ESTR DB ‚ERROR OPENNING FILE$' ; error message if file open fails
-    TEST_STR_NO_ARGS DB 'TEST_STRING_NO_ARGS', '$' ; test string
-    TEST_STR_REVERSE DB 'TEST_STR_REVERSE', '$' ; test string 2
-    ARGS_ERROR_MSG DB 'Invalid arguments. Use -h for help.', '$'
-DATA ENDS
+    test_str_no_args db 'TEST_STRING_NO_ARGS', '$' ; test string
+    test_str_reverse db 'TEST_STR_REVERSE', '$' ; test string 2
+    args_error_msg db 'Invalid arguments. Use -h for help.', '$'
+    file_open_error_msg db 'Error opening file: ', '$'
+    file_read_error_msg db 'Error reading from file: ', '$'
+data ends
 
-CODE SEGMENT
-; CS -> Code Segment
-; DS -> Data Segment
-ASSUME CS:CODE, DS:DATA ; init CS, DS (assigning the beginnings of segments to individual segment registers)
+code segment
+; cs -> code segment
+; ds -> data segment
+assume cs:code, ds:data ; init cs, ds (assigning the beginnings of segments to individual segment registers)
 
 ; clear screen procedure
-CLSCREEN PROC
-    MOV AX, 0003H ; alternativa AH,0 AL,03 ; sluzba videoBIOS
-    INT 10H ; prerusenie BIOS
-    RET
-ENDP
+clscreen proc
+    mov ax, 0003h ; alternativa ah,0 al,03 ; sluzba videobios
+    int 10h ; prerusenie bios
+    ret
+endp
 
-; cursor setup (macro) -> may need to be included ? -> probably not, only if separate file
-CURSOR MACRO
-    MOV DH, X ; kurzor na pozícii (X, Y)
-    MOV DL, Y ; grafický režim MS-DOS 25 riadkov, 80 stĺpcov
-    MOV AH, 02H
-    INT 10H
-ENDM
+; cursor setup (Macro) -> may need to be included ? -> probably not, only if separate file
+cursor Macro
+    mov dh, x ; kurzor na pozícii (x, y)
+    mov dl, y ; grafický režim ms-dos 25 riadkov, 80 stĺpcov
+    mov ah, 02h
+    int 10h
+endm
 
-; write string (macro)
-W_STR MACRO placeholder
-    MOV DX, OFFSET placeholder ; do DX ulož relatívnu adresu premennej t
-    MOV AH, 09H ; niekde v datovom segmente bude: placeholder DB ‚ 'SOME_STRING$'
-    INT 21H
-ENDM
+show_string proc
+    mov ah, 09h   ; dos print string service
+    int 21h       ; call dos interrupt
+    ret
+show_string endp
+
+; write string (Macro)
+w_str Macro str_name
+    mov dx, offset str_name ; do dx ulož relatívnu adresu premennej str_name
+    call show_string           ; call the common string-printing procedure
+endm
 
 ; open file
-; Všetky služby pre prácu so súbormi používajú príznakový bit CF – carry ako výstupný
-; parameter, ktorý informuje o tom, či sa služba vykonala bez chyby (CF=0) alebo nie
-; (CF=1)
-O_FILE MACRO FILENAME
-    MOV AH, 3DH ; služba – otvorí súbor podľa spôsobu prístupu v AL
-    MOV AL, 0 ; AL 0-read only, 1-write only, 2-read/write
-    MOV DX, OFFSET FILENAME ; v dat. segmente- FILENAME DB 'SUBOR.TXT', 0 alebo FILENAME DB 'C:\USERS\TEST.TXT ',0
-    INT 21H
-ENDM ; pozor!! po skončení je v AX file_handle
+; všetky služby pre prácu so súbormi používajú príznakový bit cf – carry ako výstupný
+; parameter, ktorý informuje o tom, či sa služba vykonala bez chyby (cf=0) alebo nie
+; (cf=1)
+o_file Macro filename
+    mov ah, 3dh ; služba – otvorí súbor podľa spôsobu prístupu v al
+    mov al, 0 ; al 0-read only, 1-write only, 2-read/write
+    mov dx, offset filename ; v dat. segmente- filename db 'subor.txt', 0 alebo filename db 'c:\users\test.txt ',0
+    int 21h
+endm ; pozor!! po skončení je v ax file_handle
 
 ; close file
-C_FILE MACRO file_handle
-    MOV AH, 3EH ; služba MS-DOS
-    MOV BX, file_handle ; v BX služba MS-DOS 3EH očakáva file_handle
-    INT 21H
-ENDM
+c_file Macro file_handle
+    mov ah, 3eh ; služba ms-dos
+    mov bx, file_handle ; v bx služba ms-dos 3eh očakáva file_handle
+    int 21h
+endm
 
 ; print file
-P_FILE MACRO FILENAME ; v dat. segmente je - FILENAME DB 'SUBOR.TXT', 0
-    MOV AX, SEG FILENAME ; do AX vlož adresu segmentu DATA
-    MOV DS, AX ; presuň do segmentového registra
-    MOV DX, OFFSET FILENAME ; do DX ulož relatívnu adresu premennej FILENAME
-    MOV AH, 09H ; služba/funkcia MS-DOS
-    INT 21H
-    ENDM
-    ; Plnenie segm. registrov nejde priamo, preto MOV AX, SEG FILENAME
-    ; MOV DS, AX
+show_file Macro filename ; v dat. segmente je - filename db 'subor.txt', 0
+    mov ax, seg filename ; do ax vlož adresu segmentu data
+    mov ds, ax ; presuň do segmentového registra
+    mov dx, offset filename ; do dx ulož relatívnu adresu premennej filename
+    mov ah, 09h ; služba/funkcia ms-dos
+    int 21h
+endm
+    ; plnenie segm. registrov nejde priamo, preto mov ax, seg filename
+    ; mov ds, ax
 
 ; read file
-; R_FILE
+; r_file
 
 ; print help
-P_HELP MACRO
-    MOV DX, OFFSET HELP
-    MOV AH, 09H
-    INT 21H
-ENDM
+show_help Macro
+    mov dx, offset help
+    call show_string           ; call the common string-printing procedure
+endm
 
 ; handle command-line arguments
-HANDLE_ARGS PROC
-    MOV AX, 0 ; Initialize AX to zero
-    MOV SI, 80H ; Command-line arguments start at 80h in PSP
-    MOV CL, ES:[SI] ; Get the length of the command-line arguments
-    CMP CL, 0
-    JE NO_ARGS ; If no arguments are present, jump to NO_ARGS
-    CALL SKIP_WHITESPACE
-    CMP BYTE PTR ES:[SI], '-' ; Check for '-'
-    JNE NO_ARGS ; If not found, jump to NO_ARGS
-    INC SI ; Move to the next character
-    CMP BYTE PTR ES:[SI], 'h' ; Check for 'h'
-    JE ARGS_HELP
-    CMP BYTE PTR ES:[SI], 'r' ; Check for 'r'
-    JE ARGS_REVERSE
-    JMP ARGS_ERR ; If no valid arguments are found, jump to ARGS_ERR
+handle_args proc
+    mov ax, 0 ; initialize ax to zero
+    mov si, 80h ; command-line arguments start at 80h in psp
+    mov cl, es:[si] ; get the length of the command-line arguments
+    cmp cl, 0
+    je no_args ; if no arguments are present, jump to no_args
+    call skip_whitespace
+    cmp byte ptr es:[si], '-' ; check for '-'
+    jne no_args ; if not found, jump to no_args
+    inc si ; move to the next character
+    cmp byte ptr es:[si], 'h' ; check for 'h'
+    je args_help
+    cmp byte ptr es:[si], 'r' ; check for 'r'
+    je args_reverse
+    jmp args_err ; if no valid arguments are found, jump to args_err
 
-    ARGS_ERR:
-        W_STR ARGS_ERROR_MSG ; Display an error message
-        JMP EXIT ; Exit the program
+    args_err:
+        w_str args_error_msg ; show an error message
+        jmp exit ; exit the program
 
-    ARGS_HELP:
-        P_HELP ; Display the help message
-        JMP EXIT ; Exit the program
+    args_help:
+        show_help ; show the help message
+        jmp exit ; exit the program
 
-    ARGS_REVERSE:
-        ; Handle reverse order argument
+    args_reverse:
+        ; handle reverse order argument
         ; ...
-        W_STR TEST_STR_REVERSE
-        JMP ARGS_END
+        w_str test_str_reverse
+        jmp args_end
 
-    NO_ARGS: 
-        ; Default behavior with files only
+    no_args: 
+        ; default behavior with files only
         ; ...
-        W_STR TEST_STR_NO_ARGS
-        JMP ARGS_END
+        w_str test_str_no_args
+        jmp args_end
 
-    ARGS_END:
-        RET
-ENDP
+    args_end:
+        ret
+endp
 
-SKIP_WHITESPACE PROC
-    INC SI ; Move to to first character
-    MOV AL, ES:[SI] ; Load the current character into AL
-    WHITESPACE_LOOP:
-        CMP AL, ' ' ; Check if the character is a space
-        JE SKIP_CHAR ; If yes, skip it
-        CMP AL, 9 ; Check if the character is a tab
-        JE SKIP_CHAR ; If yes, skip it
-        CMP AL, 0DH ; Check if the character is a carriage return
-        JE SKIP_CHAR ; If yes, skip it
-        CMP AL, 0AH ; Check if the character is a newline
-        JE SKIP_CHAR ; If yes, skip it
-        JMP END_SKIP ; If no more whitespace, exit the loop
+skip_whitespace proc
+    inc si ; move to to first character
+    mov al, es:[si] ; load the current character into al
+    whitespace_loop:
+        cmp al, ' ' ; check if the character is a space
+        je skip_char ; if yes, skip it
+        cmp al, 9 ; check if the character is a tab
+        je skip_char ; if yes, skip it
+        cmp al, 0dh ; check if the character is a carriage return
+        je skip_char ; if yes, skip it
+        cmp al, 0ah ; check if the character is a newline
+        je skip_char ; if yes, skip it
+        jmp end_skip ; if no more whitespace, exit the loop
 
-    SKIP_CHAR:
-        INC SI ; Move to the next character
-        MOV AL, ES:[SI] ; Load the next character into AL
-        JMP WHITESPACE_LOOP ; Repeat the loop
+    skip_char:
+        inc si ; move to the next character
+        mov al, es:[si] ; load the next character into al
+        jmp whitespace_loop ; repeat the loop
 
-    END_SKIP:
-        RET
-ENDP
+    end_skip:
+        ret
+endp
 
-START:
-    MOV AX,DATA             ; Move data segment address to AX
-    MOV DS,AX               ; Move data segment address to DS
-    CALL HANDLE_ARGS
-EXIT:
-    MOV AH,4CH ; DOS function to terminate the program
-    INT 21H
-CODE ENDS
-END START
+start:
+    mov ax,data             ; move data segment address to ax
+    mov ds,ax               ; move data segment address to ds
+    call handle_args
+exit:
+    mov ah,4ch ; dos function to terminate the program
+    int 21h
+code ends
+end start
 
 
 
 
 
 ; Zadanie č. [16]
-; Autor: Marek Čederle
+; ; Autor:
 ; Text zadania:
 ; Napíšte program (v JSI) ktorý umožní používateľovi pomocou argumentov zadaných na príkazovom riadku pri spúšťaní programu vykonať pre zadaný súbor/súbory (vstup) vybranú funkciu. Ak bude zadaný prepínač '-h', program musí zobraziť informácie o programe a jeho použití. V programe vhodne použite makro s parametrom, ako aj vhodné volania OS (resp. BIOS) pre nastavenie kurzora, výpis reťazca, zmazanie obrazovky, prácu so súbormi a pod. Definície makier musia byť v samostatnom súbore. Program musí korektne spracovať súbory s dĺžkou aspoň do 64kB. Pri čítaní využite pole vhodnej veľkosti (buffer), pričom zo súboru do pamäte sa bude opakovane presúvať vždy (až na posledné čítanie) celá veľkosť poľa. Ošetrite chybové stavy. Program, respektíve každý zdrojový súbor, musí obsahovať primeranú technickú dokumentáciu.
 ;   - Hlavna uloha:
