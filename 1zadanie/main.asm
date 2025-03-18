@@ -10,6 +10,7 @@ data segment
 	args_error_msg db 'Invalid arguments. Use -h for help.', '$'
 	file_open_error_msg db 'Error opening file: ', '$'
 	file_read_error_msg db 'Error reading from file: ', '$'
+	file_close_error_msg db 'Error closing file: ', '$'
 
 	test_str_no_args db 'TEST_STRING_NO_ARGS', '$' ; test string
 	test_str_reverse db 'TEST_STR_REVERSE', '$' ; test string 2
@@ -20,23 +21,23 @@ code segment
 ; ds -> data segment
 assume cs:code, ds:data ; init cs, ds (assigning the beginnings of segments to individual segment registers)
 
-show_string proc
+str_print_service proc
 	mov ah, 09h		; dos print string service
 	int 21h         ; call dos interrupt
 	ret
-show_string endp
+str_print_service endp
 
 ; write string (Macro)
-w_str Macro str_name
+print_str Macro str_name
 	mov dx, offset str_name     ; do dx ulož relatívnu adresu premennej str_name
-	call show_string            ; call the common string-printing procedure
+	call str_print_service            ; call the common string-printing procedure
 endm
 
 ; open file
 ; všetky služby pre prácu so súbormi používajú príznakový bit cf – carry ako výstupný
 ; parameter, ktorý informuje o tom, či sa služba vykonala bez chyby (cf=0) alebo nie
 ; (cf=1)
-o_file Macro filename
+open_file Macro filename
 	mov ah, 3dh 				; služba – otvorí súbor podľa spôsobu prístupu v al
 	mov al, 0 					; al 0-read only, 1-write only, 2-read/write
 	mov dx, offset filename 	; v dat. segmente- filename db 'subor.txt', 0 alebo filename db 'c:\users\test.txt ',0
@@ -44,67 +45,26 @@ o_file Macro filename
 endm 							; pozor!! po skončení je v ax file_handle
 
 ; close file
-c_file Macro file_handle
+close_file Macro file_handle
 	mov ah, 3eh 			; služba ms-dos
 	mov bx, file_handle 	; v bx služba ms-dos 3eh očakáva file_handle
 	int 21h
 endm
 
 ; print file
-show_file_name Macro filename 	; v dat. segmente je - filename db 'subor.txt', 0
+print_file_name Macro filename 	; v dat. segmente je - filename db 'subor.txt', 0
 	mov ax, seg filename 		; do ax vlož adresu segmentu data
 	mov ds, ax 					; presuň do segmentového registra
 	mov dx, offset filename 	; do dx ulož relatívnu adresu premennej filename
-	call show_string
+	call str_print_service
 endm							; plnenie segm. registrov nejde priamo, preto mov ax, seg filename
 								; mov ds, ax
 
 ; print help
 show_help Macro
 	mov dx, offset help
-	call show_string 			; call the common string-printing procedure
+	call str_print_service 			; call the common string-printing procedure
 endm
-
-; handle command-line arguments
-handle_args proc
-	mov ax, 0 					; initialize ax to zero
-	mov si, 80h 				; command-line arguments start at 80h in psp
-	mov cl, es:[si] 			; get the length of the command-line arguments
-	cmp cl, 0
-	je no_args 					; if no arguments are present, jump to no_args
-	call skip_whitespace
-	cmp byte ptr es:[si], '-' 	; check for '-'
-	jne no_args 				; if not found, jump to no_args
-	inc si 						; move to the next character
-	cmp byte ptr es:[si], 'h' 	; check for 'h'
-	je args_help
-	cmp byte ptr es:[si], 'r' 	; check for 'r'
-	je args_reverse
-	jmp args_err 				; if no valid arguments are found, jump to args_err
-
-	args_err:
-		w_str args_error_msg 	; show an error message
-		jmp exit 				; exit the program
-
-	args_help:
-		show_help 				; show the help message
-		jmp exit 				; exit the program
-
-	args_reverse:
-		; handle reverse order argument
-		; ...
-		w_str test_str_reverse
-		jmp args_end
-
-	no_args: 
-		; default behavior with files only
-		; ...
-		w_str test_str_no_args
-		jmp args_end
-
-	args_end:
-		ret
-endp
 
 skip_whitespace proc
 	inc si 				; move to to first character
@@ -129,6 +89,48 @@ skip_whitespace proc
 		ret
 endp
 
+; handle command-line arguments
+handle_args proc
+	mov ax, 0 					; initialize ax to zero
+	mov si, 80h 				; command-line arguments start at 80h in psp
+	mov cl, es:[si] 			; get the length of the command-line arguments
+	cmp cl, 0
+	je no_args 					; if no arguments are present, jump to no_args
+	call skip_whitespace
+	cmp byte ptr es:[si], '-' 	; check for '-'
+	jne no_args 				; if not found, jump to no_args
+	inc si 						; move to the next character
+	cmp byte ptr es:[si], 'h' 	; check for 'h'
+	je args_help
+	cmp byte ptr es:[si], 'r' 	; check for 'r'
+	je args_reverse
+	jmp args_err 				; if no valid arguments are found, jump to args_err
+
+	args_err:
+		print_str args_error_msg 	; show an error message
+		jmp exit 				; exit the program
+
+	args_help:
+		show_help 				; show the help message
+		jmp exit 				; exit the program
+
+	args_reverse:
+		; handle reverse order argument
+		; ...
+		print_str test_str_reverse
+		jmp args_end
+
+	no_args: 							; file processing without arguments
+		; default behavior
+		; ...
+		print_str test_str_no_args
+		jmp args_end
+
+	args_end:
+		ret
+endp
+
+; -------------------- START OF THE PROGRAM --------------------
 start:
 	mov ax,data             ; move data segment address to ax
 	mov ds,ax               ; move data segment address to ds
