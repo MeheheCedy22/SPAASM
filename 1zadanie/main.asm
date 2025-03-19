@@ -3,13 +3,14 @@ model small
 BUFFSIZE EQU 32768 ; input buffer size 32 KiB
 
 data segment
-	help db 'Author: Name Surname', 10, 13, 'Usage: MAIN.EXE [options] [files]', 10, 13, 'Options:', 10, 13, '  -h    Display this help message', 10, 13, '  -r    Display contents in reverse order', 10, 13, 'Files:', 10, 13, '  Specify one or more files to process.', 10, 13, 'Example: MAIN.EXE -r INPUT.TXT INPUT2.TXT', 10, 13, '$'
+	help db 'Author: Name Surname', 10, 13, 'Usage: MAIN.EXE [options] [files]', 10, 13, 'Options:', 10, 13, '  -h    Display this help message', 10, 13, '  -r    Display contents in reverse order', 10, 13, 'Files:', 10, 13, '  Specify one or more files to process.', 10, 13, 'Example: MAIN.EXE INPUT.TXT', 10, 13, 'Example: MAIN.EXE INPUT.TXT INPUT2.TXT', 10, 13, 'Example: MAIN.EXE -r INPUT.TXT', 10, 13, 'Example: MAIN.EXE -r INPUT.TXT INPUT2.TXT', 10, 13, '$'
 
 	buff db buffsize dup ('$') ; allocate buffer for input data
 
     file_name db 32 dup(0), '$'		; buffer for file name
 	
 	args_error_msg db 'Invalid arguments. Use -h for help.', '$'
+	no_args_error_msg db 'No arguments provided. Use -h for help.', '$'
 	file_open_error_msg db 'Error opening file: ', '$'
 	file_read_error_msg db 'Error reading from file: ', '$'
 	file_close_error_msg db 'Error closing file: ', '$'
@@ -122,7 +123,7 @@ handle_args proc
 	je no_args 					; if no arguments are present, jump to no_args
 	call skip_whitespace
 	cmp byte ptr es:[si], '-' 	; check for '-'
-	jne no_args 				; if not found, jump to no_args
+	jne args_file 				; if not found, jump to no_args
 	inc si 						; move to the next character
 	cmp byte ptr es:[si], 'h' 	; check for 'h'
 	je args_help
@@ -137,6 +138,10 @@ handle_args proc
 	args_help:
 		show_help 				; show the help message
 		jmp exit 				; exit the program
+		
+	no_args:
+		print_str no_args_error_msg
+		jmp exit
 
 	args_reverse:
 		; handle reverse order argument
@@ -144,7 +149,8 @@ handle_args proc
 		print_str test_str_reverse
 		jmp args_end
 
-	no_args: 							; file processing without arguments
+
+	args_file: 							; file processing without arguments
 		; default behavior
 		; ...
 		; print_str test_str_no_args
