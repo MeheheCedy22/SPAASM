@@ -1,12 +1,12 @@
 model small
 stack 100h
 
-buffsize EQU 32768 ; input buffer size 32 KiB
+BUFFSIZE EQU 32768 ; input buffer size 32 KiB
 
 data segment
 	help db 'Author: Name Surname', 10, 13, 'Usage: MAIN.EXE [options] [files]', 10, 13, 'Options:', 10, 13, '  -h    Display this help message', 10, 13, '  -r    Display contents in reverse order', 10, 13, 'Files:', 10, 13, '  Specify one or more files to process.', 10, 13, 'Example: MAIN.EXE INPUT.TXT', 10, 13, 'Example: MAIN.EXE INPUT.TXT INPUT2.TXT', 10, 13, 'Example: MAIN.EXE -r INPUT.TXT', 10, 13, 'Example: MAIN.EXE -r INPUT.TXT INPUT2.TXT', 10, 13, '$'
 
-	buff db buffsize dup ('$'), '$' ; allocate buffer for input data
+	buff db BUFFSIZE dup ('$'), '$' ; allocate buffer for input data
 
 	buff_line_out db 80 dup ('$'), '$' ; allocate buffer for 1 line of data (80 characters)
 
