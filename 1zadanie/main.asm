@@ -1,7 +1,15 @@
 model small
 stack 100h
 
-BUFFSIZE EQU 32768 ; input buffer size 32 KiB
+; 1024
+; 2048
+; 4096
+; 8192
+; 16384
+; 32768
+; 65536
+
+BUFFSIZE EQU 1024 ; input buffer size 16 KiB
 
 data segment
 	help db 'Author: Name Surname', 10, 13, 'Usage: MAIN.EXE [options] [files]', 10, 13, 'Options:', 10, 13, '  -h    Display this help message', 10, 13, '  -r    Display contents in reverse order', 10, 13, 'Files:', 10, 13, '  Specify one or more files to process.', 10, 13, 'Example: MAIN.EXE INPUT.TXT', 10, 13, 'Example: MAIN.EXE INPUT.TXT INPUT2.TXT', 10, 13, 'Example: MAIN.EXE -r INPUT.TXT', 10, 13, 'Example: MAIN.EXE -r INPUT.TXT INPUT2.TXT', 10, 13, '$'
@@ -29,11 +37,7 @@ code segment
 ; ds -> data segment
 assume cs:code, ds:data ; init cs, ds (assigning the beginnings of segments to individual segment registers)
 
-str_print_service proc
-	mov ah, 09h		; dos print string service
-	int 21h         ; call dos interrupt
-	ret
-str_print_service endp
+
 
 ; write string (Macro)
 print_str Macro str_name
@@ -68,11 +72,17 @@ print_file_name Macro filename 	; v dat. segmente je - filename db 'subor.txt', 
 endm							; plnenie segm. registrov nejde priamo, preto mov ax, seg filename
 								; mov ds, ax
 
+str_print_service proc
+	mov ah, 09h		; dos print string service
+	int 21h         ; call dos interrupt
+	ret
+str_print_service endp
+
 ; print help
-show_help Macro
+show_help proc
 	mov dx, offset help
 	call str_print_service 			; call the common string-printing procedure
-endm
+endp
 
 skip_whitespace proc
 	inc si 				; move to to first character
@@ -174,7 +184,7 @@ handle_args proc
 		jmp exit 				; exit the program
 
 	args_help:
-		show_help 				; show the help message
+		call show_help 				; show the help message
 		jmp exit 				; exit the program
 		
 	no_args:
