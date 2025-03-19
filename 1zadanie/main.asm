@@ -135,7 +135,7 @@ read_file_to_buff proc
     push cx
     push dx
 
-    mov bx, ax           ; save file handle in BX
+    mov bx, ax           ; save file handle in BX (prerequisite to have the file handle in AX in first place)
     mov ah, 3Fh          ; DOS read file service
     mov cx, BUFFSIZE     ; number of bytes to read
     mov dx, offset buff  ; buffer to receive file data
@@ -146,6 +146,7 @@ read_file_to_buff proc
 
 read_error:
     print_str file_read_error_msg
+	jmp exit
 
 read_done:
     pop dx
@@ -228,8 +229,10 @@ handle_args proc
 		open_file file_name
 		; store file handle
 		mov file_handle, ax
+
 		; read file
 		call read_file_to_buff
+
 		; print buffer
 		call print_buff
 
