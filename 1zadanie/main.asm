@@ -8,6 +8,8 @@ data segment
 
 	buff db buffsize dup ('$'), '$' ; allocate buffer for input data
 
+	buff_out db buffsize dup ('$'), '$' ; allocate buffer for output data
+
     file_name db 32 dup(0), '$'		; buffer for file name (max 32 characters filename)
 
 	file_handle dw ?, '$' ; file handle
