@@ -28,7 +28,7 @@ data segment
 	file_read_error_msg db 'Error reading from file: ', '$'
 	file_close_error_msg db 'Error closing file: ', '$'
 
-	test_str_no_args db 'TEST_STRING_NO_ARGS', '$' ; test string
+	test_str db 'TEST_STRING', '$' ; test string
 	test_str_reverse db 'TEST_STR_REVERSE', '$' ; test string 2
 data ends
 
@@ -36,8 +36,6 @@ code segment
 ; cs -> code segment
 ; ds -> data segment
 assume cs:code, ds:data ; init cs, ds (assigning the beginnings of segments to individual segment registers)
-
-
 
 ; write string (Macro)
 print_str Macro str_name
@@ -54,6 +52,7 @@ open_file Macro filename
 	mov al, 0 					; al 0-read only, 1-write only, 2-read/write
 	mov dx, offset filename 	; v dat. segmente- filename db 'subor.txt', 0 alebo filename db 'c:\users\test.txt ',0
 	int 21h
+	jc file_open_error
 endm 							; pozor!! po skončení je v ax file_handle
 
 ; close file
@@ -162,6 +161,16 @@ print_buff proc
     ret
 print_buff endp
 
+process_buff proc
+	; push all changed registers to the stack
+	
+
+	process_buff_end:
+		; pop all changed registers from the stack
+	
+		ret
+endp
+
 ; handle command-line arguments
 handle_args proc
 	mov ax, 0 					; initialize ax to zero
@@ -179,17 +188,28 @@ handle_args proc
 	je args_reverse
 	jmp args_err 				; if no valid arguments are found, jump to args_err
 
-	args_err:
-		print_str args_error_msg 	; show an error message
-		jmp exit 				; exit the program
-
 	args_help:
 		call show_help 				; show the help message
-		jmp exit 				; exit the program
+		jmp args_end 				; exit the program
+
+	args_err:
+		print_str args_error_msg 	; show an error message
+		jmp args_end 				; exit the program
 		
 	no_args:
 		print_str no_args_error_msg
-		jmp exit
+		jmp args_end
+
+	file_open_error:
+		print_str file_open_error_msg
+		print_str file_name
+		jmp args_end
+
+	file_close_error:
+		print_str test_str
+		print_str file_close_error_msg
+		print_str file_name
+		jmp args_end
 
 	args_reverse:
 		; handle reverse order argument
@@ -197,14 +217,9 @@ handle_args proc
 		print_str test_str_reverse
 		jmp args_end
 
-
-	args_file: 							; file processing without arguments
+	; file processing without arguments
+	args_file:
 		; default behavior
-		; ...
-		; print_str test_str_no_args
-		; jmp args_end
-
-		; default file processing:
     	; call parse_filename to copy file name from command-line
     	call parse_filename
     	; print_file_name file_name   ; display the parsed file name
@@ -220,11 +235,9 @@ handle_args proc
 
 
 
-
-
 		; close file
 		close_file file_handle
-
+		jc file_close_error
 
     	jmp args_end
 
@@ -285,3 +298,4 @@ end start
 ; MOJE PODMIENKY
 ; - input musi byt max 80 znakov na riadok 
 ; - input nesmie obsahovat specialny znak '$'
+; - input file nazov max 16 znakov
