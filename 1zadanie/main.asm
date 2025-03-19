@@ -1,4 +1,5 @@
 model small
+stack 100h
 
 BUFFSIZE EQU 32768 ; input buffer size 32 KiB
 
@@ -7,7 +8,9 @@ data segment
 
 	buff db buffsize dup ('$') ; allocate buffer for input data
 
-    file_name db 32 dup(0), '$'		; buffer for file name
+    file_name db 32 dup(0), '$'		; buffer for file name (max 32 characters filename)
+
+	file_handle dw ?, '$' ; file handle
 	
 	args_error_msg db 'Invalid arguments. Use -h for help.', '$'
 	no_args_error_msg db 'No arguments provided. Use -h for help.', '$'
@@ -114,6 +117,39 @@ done:
     ret
 parse_filename endp
 
+; New procedure to read the file into the buffer "buff".
+read_file_to_buff proc
+    ; Assumes the file handle is returned in AX (from open_file).
+    push bx
+    push cx
+    push dx
+
+    mov bx, ax           ; save file handle in BX
+    mov ah, 3Fh          ; DOS read file service
+    mov cx, BUFFSIZE     ; number of bytes to read
+    mov dx, offset buff  ; buffer to receive file data
+    int 21h              ; call DOS function (number of bytes read in AX)
+    jc read_error        ; if error, jump to handler
+
+    jmp read_done
+
+read_error:
+    print_str file_read_error_msg
+
+read_done:
+    pop dx
+    pop cx
+    pop bx
+    ret
+read_file_to_buff endp
+
+; New procedure to print the contents of the buffer "buff".
+print_buff proc
+    mov dx, offset buff      ; load the offset of buff into DX
+    call str_print_service   ; call DOS service via our string-printing procedure
+    ret
+print_buff endp
+
 ; handle command-line arguments
 handle_args proc
 	mov ax, 0 					; initialize ax to zero
@@ -159,7 +195,25 @@ handle_args proc
 		; default file processing:
     	; call parse_filename to copy file name from command-line
     	call parse_filename
-    	print_file_name file_name   ; display the parsed file name
+    	; print_file_name file_name   ; display the parsed file name
+
+		; open file
+		open_file file_name
+		; store file handle
+		mov file_handle, ax
+		; read file
+		call read_file_to_buff
+		; print buffer
+		call print_buff
+
+
+
+
+
+		; close file
+		close_file file_handle
+
+
     	jmp args_end
 
 	args_end:
