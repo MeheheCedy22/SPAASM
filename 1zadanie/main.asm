@@ -172,6 +172,48 @@ process_buff proc
 		ret
 endp
 
+process_file proc
+		; call parse_filename to copy file name from command-line
+    	call parse_filename
+    	; print_file_name file_name   ; display the parsed file name
+
+		; open file
+		open_file file_name
+		; store file handle
+		mov file_handle, ax
+
+		; read file
+		call read_file_to_buff
+
+		; process file
+		call process_buff
+
+		; print buffer (temporary)
+		call print_buff
+
+
+
+		; close file
+		close_file file_handle
+		jc file_close_error
+
+		jmp process_file_end
+
+	file_open_error:
+		print_str file_open_error_msg
+		print_str file_name
+		jmp process_file_end
+
+	file_close_error:
+		print_str test_str
+		print_str file_close_error_msg
+		print_str file_name
+		jmp process_file_end
+
+	process_file_end:
+		ret
+endp
+
 ; handle command-line arguments
 handle_args proc
 	mov ax, 0 					; initialize ax to zero
@@ -201,17 +243,6 @@ handle_args proc
 		print_str no_args_error_msg
 		jmp args_end
 
-	file_open_error:
-		print_str file_open_error_msg
-		print_str file_name
-		jmp args_end
-
-	file_close_error:
-		print_str test_str
-		print_str file_close_error_msg
-		print_str file_name
-		jmp args_end
-
 	args_reverse:
 		; handle reverse order argument
 		; ...
@@ -221,27 +252,7 @@ handle_args proc
 	; file processing without arguments
 	args_file:
 		; default behavior
-    	; call parse_filename to copy file name from command-line
-    	call parse_filename
-    	; print_file_name file_name   ; display the parsed file name
-
-		; open file
-		open_file file_name
-		; store file handle
-		mov file_handle, ax
-
-		; read file
-		call read_file_to_buff
-
-		; print buffer
-		call print_buff
-
-
-
-		; close file
-		close_file file_handle
-		jc file_close_error
-
+		call process_file
     	jmp args_end
 
 	args_end:
