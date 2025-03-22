@@ -9,7 +9,7 @@ stack 100h
 ; 32768
 ; 65536
 
-BUFFSIZE EQU 1024 ; input buffer size 16 KiB
+BUFFSIZE EQU 80 ; input buffer size 16 KiB
 
 data segment
 	help db 'Author: Name Surname', 10, 13, 'Usage: MAIN.EXE [options] [files]', 10, 13, 'Options:', 10, 13, '  -h    Display this help message', 10, 13, '  -r    Display contents in reverse order', 10, 13, 'Files:', 10, 13, '  Specify one or more files to process.', 10, 13, 'Example: MAIN.EXE INPUT.TXT', 10, 13, 'Example: MAIN.EXE INPUT.TXT INPUT2.TXT', 10, 13, 'Example: MAIN.EXE -r INPUT.TXT', 10, 13, 'Example: MAIN.EXE -r INPUT.TXT INPUT2.TXT', 10, 13, '$'
@@ -21,7 +21,10 @@ data segment
     file_name db 16 dup(0), '$'		; buffer for file name (max 16 characters filename)
 
 	file_handle dw ?, '$' ; file handle
-	
+
+	occurance_count dw 0 ; occurance count
+	line_start_offset dw 0 ; line start offset (offset in the buffer where the line starts)
+
 	args_error_msg db 'Invalid arguments. Use -h for help.', '$'
 	no_args_error_msg db 'No arguments provided. Use -h for help.', '$'
 	file_open_error_msg db 'Error opening file: ', '$'
@@ -72,8 +75,12 @@ endm							; plnenie segm. registrov nejde priamo, preto mov ax, seg filename
 								; mov ds, ax
 
 str_print_service proc
+	push ax
+
 	mov ah, 09h		; dos print string service
 	int 21h         ; call dos interrupt
+
+	pop ax
 	ret
 str_print_service endp
 
@@ -157,18 +164,118 @@ read_file_to_buff endp
 
 ; New procedure to print the contents of the buffer "buff".
 print_buff proc
+	push dx
+
     mov dx, offset buff      ; load the offset of buff into DX
     call str_print_service   ; call DOS service via our string-printing procedure
+
+	pop dx
     ret
 print_buff endp
 
+print_line proc
+	push dx
+
+    mov dx, offset buff_line_out      ; load the offset of buff into DX
+    call str_print_service   ; call DOS service via our string-printing procedure
+
+	pop dx
+    ret
+print_line endp
+
+; CHECK NEWLINES AS \LF ONLY even though DOS uses \CR\LF
 process_buff proc
 	; push all changed registers to the stack
-	
+	push ax
+	push bx
+	push cx
+	push dx
+
+	mov line_start_offset , 0 ; reset line start offset
+	mov bx, line_start_offset ; get the current line start offset (current is in bx)
+
+	while_end_of_buff:
+		; check for buffer end
+		cmp bx, BUFFSIZE
+		je process_buff_end
+
+		; get the current character
+		mov al, buff[bx]	
+
+		; if (char is uppercase and offset == 0)
+		if_offset_is_zero_and_char_is_uppercase:
+			cmp al, 'A'
+			jl else_if_char_is_newline
+			cmp al, 'Z'
+			jg else_if_char_is_newline
+			cmp bx, line_start_offset
+			je before_finish_line
+		
+		; if (char is uppercase and [char-1] is whitespace)
+		or_if_char_is_uppercase_and_char_minus_one_is_whitespace:
+			; check prev char
+			mov al, buff[bx - 1]
+			cmp al, ' ' ; space 
+			jne else_if_char_is_newline
+			cmp al, 9 ; tab
+			jne else_if_char_is_newline
+
+			before_finish_line:
+				; counter++
+				inc occurance_count
+			finish_line_loop:
+				inc bx
+				mov al, buff[bx]
+				cmp al, 0ah ; check for LF
+				je loop_end
+				jmp finish_line_loop
+
+			loop_end:
+				; print line
+				mov si, line_start_offset
+				mov di, bx
+				mov cx, di
+				sub cx, si
+				mov dx, offset buff_line_out
+				mov bx, cx
+				mov cx, 0
+				; copy the line to the output buffer
+				copy_line_loop:
+					mov al, buff[si]
+					mov buff_line_out[cx], al
+					inc si
+					inc cx
+					cmp cx, bx
+					jl copy_line_loop
+
+				; null terminate the output buffer
+				mov buff_line_out[cx], '$'
+
+				; print the line
+				call print_line
+
+				; set a new start of line
+				mov line_start_offset, di
+				inc line_start_offset
+				mov bx, line_start_offset ; get the current line start offset (current is in bx)
+				jmp while_end_of_buff
+
+		else_if_char_is_newline:
+			; check for LF
+			cmp al, 0ah
+			jne while_end_of_buff
+
+			; if (char is newline)
+			mov line_start_offset, bx ; set the new line start offset
+			inc line_start_offset
+			mov bx, line_start_offset ; get the current line start offset (current is in bx)
 
 	process_buff_end:
 		; pop all changed registers from the stack
-	
+		pop dx
+		pop cx
+		pop bx
+		pop ax
 		ret
 endp
 
@@ -183,13 +290,15 @@ process_file proc
 		mov file_handle, ax
 
 		; read file
+	buff_loop:
+		mov ax, file_handle
 		call read_file_to_buff
 
 		; process file
 		call process_buff
 
 		; print buffer (temporary)
-		call print_buff
+		; call print_buff
 
 
 
@@ -282,9 +391,6 @@ end start
 ;       - 16. Vypísať riadky ktoré obsahujú slovo začínajúce veľkým písmenom a ich počet.
 ;   - Volitelne ulohy:
 ;       - 7. Plus 1 bod: Ak budú korektne spracované vstupné súbory s veľkosťou nad 64kB.
-;       - 8. Plus 1 bod: Prepínač '-r' spôsobí výpis v opačnom poradí (od konca).
-;       - 9. Plus 2 body: Ak bude možné zadať viacero vstupných súborov.
-;       - 10. Plus 2 body je možné získať ak pridelená úloha bude realizovaná ako externá procedúra (kompilovaná samostatne a prilinkovaná k výslednému programu).
 ;       - 12. Plus 1 bod je možné získať za (dobré) komentáre, resp. dokumentáciu, v anglickom jazyku.
 
 
@@ -313,3 +419,4 @@ end start
 ; - input musi byt max 80 znakov na riadok 
 ; - input nesmie obsahovat specialny znak '$'
 ; - input file nazov max 16 znakov
+; - input file musi mat aspon 2 riadky (obsahovat newline)
