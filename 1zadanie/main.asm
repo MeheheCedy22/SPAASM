@@ -20,10 +20,15 @@ data segment
 
 	file_name db 16 dup(0), '$'		; buffer for file name (max 16 characters filename)
 
+	number_buffer db 10 dup ('0'), '$' ; Buffer for number conversion (up to 10 digits + terminator)
+
 	file_handle dw ?, '$' ; file handle
 
 	occurance_count dw 0 ; occurance count
 	line_start_offset dw 0 ; line start offset (offset in the buffer where the line starts)
+
+	newline_str db 13, 10, '$'  ; CR+LF newline sequence for DOS
+	occurance_msg db 'Occurance count: ', '$' ; message for occurance count
 
 	args_error_msg db 'Invalid arguments. Use -h for help.', '$'
 	no_args_error_msg db 'No arguments provided. Use -h for help.', '$'
@@ -74,6 +79,52 @@ print_file_name Macro filename 	; v dat. segmente je - filename db 'subor.txt', 
 endm							; plnenie segm. registrov nejde priamo, preto mov ax, seg filename
 								; mov ds, ax
 
+
+print_number Macro variable_name
+    push ax
+    push bx
+    push cx
+    push dx
+    push di
+    
+    ; Set up for conversion
+    mov ax, variable_name   ; Load the number to convert
+    mov bx, 10              ; Divisor (decimal base)
+    mov di, offset number_buffer
+    add di, 9               ; Point to the end of the buffer (before '$')
+    mov cx, 0               ; Counter for number of digits
+    
+    ; Special case for zero
+    test ax, ax
+    jnz convert_loop
+    mov byte ptr [di], '0'
+    dec di
+    inc cx
+    jmp print_it
+    
+convert_loop:
+    xor dx, dx              ; Clear DX for division
+    div bx                  ; AX = quotient, DX = remainder
+    add dl, '0'             ; Convert remainder to ASCII
+    mov [di], dl            ; Store digit
+    dec di                  ; Move buffer pointer left
+    inc cx                  ; Increment digit counter
+    test ax, ax             ; Check if quotient is zero
+    jnz convert_loop      ; Continue if not zero
+    
+print_it:
+    ; DI now points one position before first digit
+    inc di                  ; Point to first digit
+    mov dx, di              ; Set DX for print service
+    call str_print_service
+    
+    pop di
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+endm
+
 str_print_service proc
 	push ax
 
@@ -88,7 +139,7 @@ str_print_service endp
 show_help proc
 	mov dx, offset help
 	call str_print_service 			; call the common string-printing procedure
-endp
+show_help endp
 
 skip_whitespace proc
 	inc si 				; move to to first character
@@ -111,7 +162,7 @@ skip_whitespace proc
 
 	end_skip:
 		ret
-endp
+skip_whitespace endp
 
 ; New procedure to parse a file name from command-line arguments.
 parse_filename proc
@@ -216,9 +267,10 @@ process_buff proc
 			; check prev char
 			mov al, buff[bx - 1]
 			cmp al, ' ' ; space 
-			jne else_if_char_is_newline
+			je before_finish_line
 			cmp al, 9 ; tab
-			jne else_if_char_is_newline
+			je before_finish_line
+			jmp else_if_char_is_newline
 
 			before_finish_line:
 				; counter++
@@ -262,14 +314,15 @@ process_buff proc
 				jmp while_end_of_buff
 
 		else_if_char_is_newline:
+			; increment bx for the next character
+			inc bx
 			; check for LF
 			cmp al, 0ah
 			jne while_end_of_buff
 
 			; if (char is newline)
 			mov line_start_offset, bx ; set the new line start offset
-			inc line_start_offset
-			mov bx, line_start_offset ; get the current line start offset (current is in bx)
+			jmp while_end_of_buff
 
 	process_buff_end:
 		; pop all changed registers from the stack
@@ -278,7 +331,7 @@ process_buff proc
 		pop bx
 		pop ax
 		ret
-endp
+process_buff endp
 
 process_file proc
 		; call parse_filename to copy file name from command-line
@@ -298,9 +351,10 @@ process_file proc
 		; process file
 		call process_buff
 
-		; print buffer (temporary)
-		; call print_buff
-
+		; print occurance count
+		print_str newline_str
+		print_str occurance_msg
+		print_number occurance_count
 
 
 		; close file
@@ -322,7 +376,7 @@ process_file proc
 
 	process_file_end:
 		ret
-endp
+process_file endp
 
 ; handle command-line arguments
 handle_args proc
@@ -367,7 +421,7 @@ handle_args proc
 
 	args_end:
 		ret
-endp
+handle_args endp
 
 ; -------------------- START OF THE PROGRAM --------------------
 start:
@@ -421,3 +475,5 @@ end start
 ; - input nesmie obsahovat specialny znak '$'
 ; - input file nazov max 16 znakov
 ; - input file musi mat aspon 2 riadky (obsahovat newline)
+; - input file musi mat vzdy za bodku medzeru
+; - input file nesmie zacinat s newline ?
