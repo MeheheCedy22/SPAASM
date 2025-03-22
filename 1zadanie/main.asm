@@ -18,7 +18,7 @@ data segment
 
 	buff_line_out db 80 dup ('$'), '$' ; allocate buffer for 1 line of data (80 characters)
 
-    file_name db 16 dup(0), '$'		; buffer for file name (max 16 characters filename)
+	file_name db 16 dup(0), '$'		; buffer for file name (max 16 characters filename)
 
 	file_handle dw ?, '$' ; file handle
 
@@ -115,72 +115,72 @@ endp
 
 ; New procedure to parse a file name from command-line arguments.
 parse_filename proc
-    lea di, file_name       ; point DI to file_name buffer
+	lea di, file_name       ; point DI to file_name buffer
 parse_loop:
-    mov al, es:[si]         ; load current character from command-line
-    cmp al, ' '             ; stop if space
-    je done
-    cmp al, 0dh             ; stop if carriage return
-    je done
-    cmp al, 0ah             ; stop if newline
-    je done
-    cmp al, 0               ; stop at end of string
-    je done
-    mov [di], al            ; store character in buffer
-    inc di
-    inc si
-    jmp parse_loop
+	mov al, es:[si]         ; load current character from command-line
+	cmp al, ' '             ; stop if space
+	je done
+	cmp al, 0dh             ; stop if carriage return
+	je done
+	cmp al, 0ah             ; stop if newline
+	je done
+	cmp al, 0               ; stop at end of string
+	je done
+	mov [di], al            ; store character in buffer
+	inc di
+	inc si
+	jmp parse_loop
 done:
-    mov byte ptr [di], 0    ; null terminate
-    ret
+	mov byte ptr [di], 0    ; null terminate
+	ret
 parse_filename endp
 
 ; New procedure to read the file into the buffer "buff".
 read_file_to_buff proc
-    ; Assumes the file handle is returned in AX (from open_file).
-    push bx
-    push cx
-    push dx
+	; Assumes the file handle is returned in AX (from open_file).
+	push bx
+	push cx
+	push dx
 
-    mov bx, ax           ; save file handle in BX (prerequisite to have the file handle in AX in first place)
-    mov ah, 3Fh          ; DOS read file service
-    mov cx, BUFFSIZE     ; number of bytes to read
-    mov dx, offset buff  ; buffer to receive file data
-    int 21h              ; call DOS function (number of bytes read in AX)
-    jc read_error        ; if error, jump to handler
+	mov bx, ax           ; save file handle in BX (prerequisite to have the file handle in AX in first place)
+	mov ah, 3Fh          ; DOS read file service
+	mov cx, BUFFSIZE     ; number of bytes to read
+	mov dx, offset buff  ; buffer to receive file data
+	int 21h              ; call DOS function (number of bytes read in AX)
+	jc read_error        ; if error, jump to handler
 
-    jmp read_done
+	jmp read_done
 
 read_error:
-    print_str file_read_error_msg
+	print_str file_read_error_msg
 	jmp exit
 
 read_done:
-    pop dx
-    pop cx
-    pop bx
-    ret
+	pop dx
+	pop cx
+	pop bx
+	ret
 read_file_to_buff endp
 
 ; New procedure to print the contents of the buffer "buff".
 print_buff proc
 	push dx
 
-    mov dx, offset buff      ; load the offset of buff into DX
-    call str_print_service   ; call DOS service via our string-printing procedure
+	mov dx, offset buff      ; load the offset of buff into DX
+	call str_print_service   ; call DOS service via our string-printing procedure
 
 	pop dx
-    ret
+	ret
 print_buff endp
 
 print_line proc
 	push dx
 
-    mov dx, offset buff_line_out      ; load the offset of buff into DX
-    call str_print_service   ; call DOS service via our string-printing procedure
+	mov dx, offset buff_line_out      ; load the offset of buff into DX
+	call str_print_service   ; call DOS service via our string-printing procedure
 
 	pop dx
-    ret
+	ret
 print_line endp
 
 ; CHECK NEWLINES AS \LF ONLY even though DOS uses \CR\LF
@@ -232,30 +232,31 @@ process_buff proc
 
 			loop_end:
 				; print line
-				mov si, line_start_offset
-				mov di, bx
-				mov cx, di
-				sub cx, si
-				mov dx, offset buff_line_out
-				mov bx, cx
-				mov cx, 0
+				mov si, line_start_offset    ; SI = start position of the current lineart_offset
+				mov di, bx                   ; DI = current position (end of line)
+				mov cx, di					 ; CX = copy DI
+				sub cx, si                   ; CX = length of line (end - start)
+				mov dx, offset buff_line_out  ; DX = address of output buffer
+				mov bx, cx                    ; BX = save the line length
+				mov cx, di					 ; CX = copy DI
+				mov di, 0                     ; Reset counter to 0 for the copy loop
 				; copy the line to the output buffer
 				copy_line_loop:
-					mov al, buff[si]
-					mov buff_line_out[cx], al
-					inc si
-					inc cx
-					cmp cx, bx
-					jl copy_line_loop
+					mov al, buff[si]          ; Get character from source buffer
+					mov buff_line_out[di], al ; Copy to destination buffer
+					inc si                    ; Move to next source character
+					inc di                    ; Move to next destination position
+					cmp di, bx                ; Have we copied the whole line?
+					jl copy_line_loop         ; If not, continue copying
 
 				; null terminate the output buffer
-				mov buff_line_out[cx], '$'
+				mov buff_line_out[di], '$'
 
 				; print the line
 				call print_line
 
 				; set a new start of line
-				mov line_start_offset, di
+				mov line_start_offset, cx	 ; set the new line start offset (from copied DI earlier)
 				inc line_start_offset
 				mov bx, line_start_offset ; get the current line start offset (current is in bx)
 				jmp while_end_of_buff
@@ -281,8 +282,8 @@ endp
 
 process_file proc
 		; call parse_filename to copy file name from command-line
-    	call parse_filename
-    	; print_file_name file_name   ; display the parsed file name
+		call parse_filename
+		; print_file_name file_name   ; display the parsed file name
 
 		; open file
 		open_file file_name
@@ -362,7 +363,7 @@ handle_args proc
 	args_file:
 		; default behavior
 		call process_file
-    	jmp args_end
+		jmp args_end
 
 	args_end:
 		ret
