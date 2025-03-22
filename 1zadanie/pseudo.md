@@ -16,7 +16,7 @@ while not end of file:
 
         get char
         
-        if (char is uppercase and if [char-1] is whitespace) or (char is uppercase and offset == 0):
+        if (char is uppercase and offset == 0) or (char is uppercase and [char-1] is whitespace):
             counter++
 
             while not end of line:
