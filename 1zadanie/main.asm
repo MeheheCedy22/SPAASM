@@ -314,7 +314,7 @@ process_buff proc
 					inc si                    ; Move to next source character
 					inc di                    ; Move to next destination position
 					cmp di, bx                ; Have we copied the whole line?
-					jl copy_line_loop         ; If not, continue copying
+					jle copy_line_loop         ; If not, continue copying
 
 				; null terminate the output buffer
 				; mov buff_line_out[di], '$'
@@ -511,6 +511,6 @@ end start
 ; - input musi byt max 80 znakov na riadok 
 ; - input nesmie obsahovat specialny znak '$'
 ; - input file nazov max 16 znakov
-; - input file musi mat aspon 2 riadky (obsahovat newline)
+; - input file musi mat aspon 2 riadky (obsahovat newline) -- toto asi netreba
 ; - input file musi mat vzdy za bodku medzeru
 ; - input file nesmie zacinat s newline ?
