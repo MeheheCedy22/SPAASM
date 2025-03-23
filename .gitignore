@@ -9,8 +9,8 @@
 1zadanie/*.txt
 
 # zadanie 2
-2zadanie/Materialy_k_cviceniam_II
-2zadanie/*.exe
+2zadanie/**
+!2zadanie/*.c
 
 # zadanie3
 
