@@ -1,22 +1,23 @@
 model small
 stack 100h
 
-; 1024
-; 2048
-; 4096
-; 8192
-; 16384
-; 32768
-; 65536
+; 1024 (1KiB)
+; 2048 (2KiB)
+; 4096 (4KiB)
+; 8192 (8KiB)
+; 16384 (16KiB)
+; 32768 (32KiB)
+; 49152 (48KiB)
+; 65536 (64KiB)
 
-BUFFSIZE EQU 256 ; input buffer size 16 KiB
+BUFFSIZE EQU 49152 ; input buffer size 16 KiB
 
 data segment
-	help db 'Author: Name Surname', 10, 13, 'Usage: MAIN.EXE [options] [files]', 10, 13, 'Options:', 10, 13, '  -h    Display this help message', 10, 13, '  -r    Display contents in reverse order', 10, 13, 'Files:', 10, 13, '  Specify one or more files to process.', 10, 13, 'Example: MAIN.EXE INPUT.TXT', 10, 13, 'Example: MAIN.EXE INPUT.TXT INPUT2.TXT', 10, 13, 'Example: MAIN.EXE -r INPUT.TXT', 10, 13, 'Example: MAIN.EXE -r INPUT.TXT INPUT2.TXT', 10, 13, '$'
+	help db 'Author: Name Surname', 10, 13, 'Usage: MAIN.EXE [options] [files]', 10, 13, 'Options:', 10, 13, '  -h    Display this help message', 10, 13, 'Files:', 10, 13, '  Specify one file to process.', 10, 13, 'Example: MAIN.EXE INPUT.TXT', 10, 13, '$'
 
 	buff db BUFFSIZE dup ('$'), '$' ; allocate buffer for input data
 
-	buff_line_out db 80 dup ('$'), '$' ; allocate buffer for 1 line of data (80 characters)
+	buff_line_out db 82 dup ('$'), '$' ; allocate buffer for 1 line of data (80 characters)
 
 	file_name db 16 dup(0), '$'		; buffer for file name (max 16 characters filename)
 
@@ -28,6 +29,10 @@ data segment
 	line_start_offset dw 0 ; line start offset (offset in the buffer where the line starts)
 
 	bytes_read dw 0  ; Track how many bytes were actually read
+
+	buffer_start_idx dw 0    ; Where to start processing in current buffer
+    incomplete_line db 0     ; Flag: 1 if previous buffer ended with incomplete line
+    prev_has_uppercase db 0  ; Tracks if partial line has uppercase word
 
 	newline_str db 13, 10, '$'  ; CR+LF newline sequence for DOS
 	occurance_msg db 'Occurance count: ', '$' ; message for occurance count
@@ -253,7 +258,10 @@ process_buff proc
 	while_end_of_buff:
 		; check for buffer end
 	    cmp bx, bytes_read
-	    jae process_buff_end
+		; jae process_buff_end
+	    jb continue_processing   ; Inverse condition with short jump
+		jmp process_buff_end     ; Unconditional jump has no range limitation
+		continue_processing:
 
 		; get the current character
 		mov al, buff[bx]	
@@ -309,7 +317,10 @@ process_buff proc
 					jl copy_line_loop         ; If not, continue copying
 
 				; null terminate the output buffer
-				mov buff_line_out[di], '$'
+				; mov buff_line_out[di], '$'
+				mov buff_line_out[di], 10
+				mov buff_line_out[di+1], 13
+				mov buff_line_out[di+2], '$'
 
 				; print the line
 				call print_line
@@ -325,7 +336,10 @@ process_buff proc
 			inc bx
 			; check for LF
 			cmp al, 0ah
-			jne while_end_of_buff
+			; jne while_end_of_buff
+			je is_newline_char       ; Use short jump with opposite condition
+			jmp while_end_of_buff    ; Unconditional jump can reach anywhere
+			is_newline_char:
 
 			; if (char is newline)
 			mov line_start_offset, bx ; set the new line start offset
@@ -362,9 +376,18 @@ process_file proc
 		mov ax, file_handle
 		call read_file_to_buff
 
+		; Check if we read anything
+    	cmp bytes_read, 0
+    	je end_of_file
+
 		; process file
 		call process_buff
 
+		; Continue reading if we filled the buffer (not EOF)
+    	cmp bytes_read, BUFFSIZE
+    	je buff_loop
+
+	end_of_file:
 		; print occurance count
 		print_str newline_str
 		print_str occurance_msg
