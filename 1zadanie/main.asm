@@ -240,10 +240,11 @@ process_buff proc
 					jle copy_line_loop         ; If not, continue copying
 
 				; null terminate the output buffer
-				; mov buff_line_out[di], '$'
-				mov buff_line_out[di], 10
-				mov buff_line_out[di+1], 13
-				mov buff_line_out[di+2], '$'
+				mov buff_line_out[di], '$'
+				; do not need, already copying the endline
+				; mov buff_line_out[di], 10
+				; mov buff_line_out[di+1], 13
+				; mov buff_line_out[di+2], '$'
 
 				; print the line
 				call print_line
