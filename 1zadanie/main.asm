@@ -355,22 +355,24 @@ end start
 
 
 ; Zhodnotenie:
-; Uvediete, či je program funkčný - ak nie - prečo?, v akom prostredí bol
-; vypracovaný (nutné programové príp. technické vybavenie), chovanie programu
-; vzhľadom na vstupné údaje (sú obmedzenia?, mohol by program zlyhať pri
-; nesplnení nejakej podmienky?), predpoklady správnej funkčnosti, chovanie
-; programu vzhľadom na použité služby DOS resp. BIOS, opis možných vylepšení -
-; programové resp. technické, ak sú potrebné, popis použitých algoritmov,
-; upozornenie na taktiky a finty, ktoré použil tvorca programu, osobitosti
-; riešenia, prípadne použité zdroje.
 
+; Program je funkčný, spracováva zadaný vstupný súbor a vypisuje riadky, ktoré
+; obsahujú slovo začínajúce veľkým písmenom. Program bol vypracovaný v prostredí
+; DOSBox 0.74 s použitím assemblera TASM (Turbo assembler) 2.02. Program bol 
+; testovaný na súboroch s rôznymi dĺžkami a obsahom, vrátane súborov väčších ako
+; 64kB. Program má implementovanú kontrolu chýb pri otváraní a čítaní súborov, ako aj
+; pri spracovaní vstupných argumentov. V prípade nesplnenia podmienok sa zobrazí
+; chybová hláška a program sa ukončí. Program má aj help funkciu, ktorá zobrazuje
+; informácie o použití programu a jeho možnostiach. Program obsahuje aj ďalší súbor
+; s definíciami makier, ktoré sú použité v hlavnom programe. Nizšie sú uvedené podmienky,
+; ktoré musia byť splnené pre správne fungovanie programu.
 
-
-
-; MOJE PODMIENKY
-; - input musi byt max 80 znakov na riadok 
-; - input nesmie obsahovat specialny znak '$'
-; - input file nazov max 16 znakov
-; - input file musi mat aspon 2 riadky (obsahovat newline) -- toto asi netreba
-; - input file musi mat vzdy za bodku medzeru
-; - input file nesmie zacinat s newline ?
+; PODMIENKY pre správne fungovanie programu:
+; - vstupný súbor musí mať max. 80 znakov na jeden riadok 
+	; je to z dôvodu čitateľnosti a prehľadnosti výstupu v termináli
+; - vstupný súbor nesmie obsahovať špeciálny znak '$'
+	; - je to z dôvodu, že to je špeciálny znak na ukončenie reťazca
+; - vstupný súbor môže mať názov max. 16 znakov
+	; - sám DOS podporuje max. 8 znakov pre názov súboru, čiže ide iba o rezervu
+; - vstupný súbor musí mať vždy za bodku na konci vety medzeru aby to bola korektne
+;	napísaná veta a tým pádom sa počítalo slovo začínajúce veľkým písmenom (ak existuje)
