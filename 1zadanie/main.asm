@@ -1,16 +1,23 @@
-model small
-stack 100h
+; Zadanie č. [16]
+; ; Autor: Name Surname
+; Text zadania:
+; Napíšte program (v JSI) ktorý umožní používateľovi pomocou argumentov zadaných na príkazovom riadku pri spúšťaní programu vykonať pre zadaný súbor/súbory (vstup) vybranú funkciu. Ak bude zadaný prepínač '-h', program musí zobraziť informácie o programe a jeho použití. V programe vhodne použite makro s parametrom, ako aj vhodné volania OS (resp. BIOS) pre nastavenie kurzora, výpis reťazca, zmazanie obrazovky, prácu so súbormi a pod. Definície makier musia byť v samostatnom súbore. Program musí korektne spracovať súbory s dĺžkou aspoň do 64kB. Pri čítaní využite pole vhodnej veľkosti (buffer), pričom zo súboru do pamäte sa bude opakovane presúvať vždy (až na posledné čítanie) celá veľkosť poľa. Ošetrite chybové stavy. Program, respektíve každý zdrojový súbor, musí obsahovať primeranú technickú dokumentáciu.
+;   - Hlavna uloha:
+;       - 16. Vypísať riadky ktoré obsahujú slovo začínajúce veľkým písmenom a ich počet.
+;   - Volitelne ulohy:
+;       - 7. Plus 1 bod: Ak budú korektne spracované vstupné súbory s veľkosťou nad 64kB.
+;       - 12. Plus 1 bod je možné získať za (dobré) komentáre, resp. dokumentáciu, v anglickom jazyku.
 
-; 1024 (1KiB)
-; 2048 (2KiB)
-; 4096 (4KiB)
-; 8192 (8KiB)
-; 16384 (16KiB)
-; 32768 (32KiB)
-; 49152 (48KiB)
-; 65536 (64KiB)
 
-BUFFSIZE EQU 49152 ; input buffer size 16 KiB
+; Termín odovzdávania: 23.03.2025 23:59
+; Ročník, ak. rok, semester, odbor: tretí, 2024/2025, letný, informatika
+
+; Riešenie:
+
+model small ; small memory model (code and data have each their own single segment)
+stack 100h ; stack size 256 B
+
+BUFFSIZE EQU 49152 ; input buffer size 48 KiB
 
 data segment
 	help db 'Author: Name Surname', 10, 13, 'Usage: MAIN.EXE [options] [files]', 10, 13, 'Options:', 10, 13, '  -h    Display this help message', 10, 13, 'Files:', 10, 13, '  Specify one file to process.', 10, 13, 'Example: MAIN.EXE INPUT.TXT', 10, 13, '$'
@@ -394,28 +401,6 @@ exit:
 	int 21h
 code ends
 end start
-
-
-
-
-
-; Zadanie č. [16]
-; ; Autor: Name Surname
-; Text zadania:
-; Napíšte program (v JSI) ktorý umožní používateľovi pomocou argumentov zadaných na príkazovom riadku pri spúšťaní programu vykonať pre zadaný súbor/súbory (vstup) vybranú funkciu. Ak bude zadaný prepínač '-h', program musí zobraziť informácie o programe a jeho použití. V programe vhodne použite makro s parametrom, ako aj vhodné volania OS (resp. BIOS) pre nastavenie kurzora, výpis reťazca, zmazanie obrazovky, prácu so súbormi a pod. Definície makier musia byť v samostatnom súbore. Program musí korektne spracovať súbory s dĺžkou aspoň do 64kB. Pri čítaní využite pole vhodnej veľkosti (buffer), pričom zo súboru do pamäte sa bude opakovane presúvať vždy (až na posledné čítanie) celá veľkosť poľa. Ošetrite chybové stavy. Program, respektíve každý zdrojový súbor, musí obsahovať primeranú technickú dokumentáciu.
-;   - Hlavna uloha:
-;       - 16. Vypísať riadky ktoré obsahujú slovo začínajúce veľkým písmenom a ich počet.
-;   - Volitelne ulohy:
-;       - 7. Plus 1 bod: Ak budú korektne spracované vstupné súbory s veľkosťou nad 64kB.
-;       - 12. Plus 1 bod je možné získať za (dobré) komentáre, resp. dokumentáciu, v anglickom jazyku.
-
-
-; Termín odovzdávania: 23.03.2025 23:59
-; Ročník, ak. rok, semester, odbor: 3, 2024/2025, letný, informatika
-
-
-; sem umiestnite okomentovaný program
-
 
 
 ; Zhodnotenie:

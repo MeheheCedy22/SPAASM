@@ -1,4 +1,4 @@
-
+; --------------------- MACROS ---------------------
 ; write string (Macro)
 print_str Macro str_name
 	mov dx, offset str_name     ; do dx ulož relatívnu adresu premennej str_name
@@ -78,3 +78,4 @@ print_it:
     pop bx
     pop ax
 endm
+; --------------------- END MACROS ---------------------
