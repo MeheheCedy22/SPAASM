@@ -70,25 +70,18 @@ show_help endp
 
 ; Skip whitespace characters in command-line input
 skip_whitespace proc
-	inc si 				; Move to first character
-	mov al, es:[si] 	; Load the current character into AL
 	whitespace_loop:
-		cmp al, ' ' 	; Check if character is a space
-		je skip_char 	; If yes, skip it
-		cmp al, 9 		; Check if character is a tab (ASCII 9)
-		je skip_char 	; If yes, skip it
-		cmp al, 0dh 	; Check if character is a carriage return (ASCII 13)
-		je skip_char 	; If yes, skip it
-		cmp al, 0ah 	; Check if character is a line feed (ASCII 10)
-		je skip_char 	; If yes, skip it
-		jmp end_skip 	; If no more whitespace, exit the loop
+	inc si 					; Move to first character
+	mov al, es:[si] 		; Load the current character into AL
+		cmp al, ' ' 		; Check if character is a space
+		je whitespace_loop 	; If yes, skip it
+		cmp al, 9 			; Check if character is a tab (ASCII 9)
+		je whitespace_loop 	; If yes, skip it
+		cmp al, 0dh 		; Check if character is a carriage return (ASCII 13)
+		je whitespace_loop 	; If yes, skip it
+		cmp al, 0ah 		; Check if character is a line feed (ASCII 10)
+		je whitespace_loop 	; If yes, skip it
 
-	skip_char:
-		inc si 				; Move to the next character
-		mov al, es:[si] 	; Load the next character into AL
-		jmp whitespace_loop ; Repeat the loop
-
-	end_skip:
 		ret
 skip_whitespace endp
 
@@ -128,8 +121,7 @@ read_file_to_buff proc
 	int 21h                 ; Call DOS function (bytes read returned in AX)
 	jc read_error           ; If error (CF=1), jump to handler
 
-	; Store actual bytes read for safe buffer processing
-	mov bytes_read, ax      ; Store byte count for later processing
+	mov bytes_read, ax      ; Store actual bytes read for safe buffer processing
 
 	jmp read_done
 
@@ -144,17 +136,6 @@ read_done:
 	ret
 read_file_to_buff endp
 
-; Print contents of the buffer "buff"
-print_buff proc
-	push dx                    ; Save DX
-
-	mov dx, offset buff        ; Load address of buffer
-	call str_print_service     ; Print buffer contents
-
-	pop dx                     ; Restore DX
-	ret
-print_buff endp
-
 ; Print contents of the buffer "buff_line_out"
 print_line proc
 	push dx                    ; Save DX
@@ -167,7 +148,7 @@ print_line proc
 print_line endp
 
 ; Process buffer to find lines with words starting with uppercase letters
-; Note: Processes newlines as LF only (even though DOS uses CR+LF)
+; - processes newlines as LF only (even though DOS uses CR+LF), CR can be ommited as the LF is the actual last character
 process_buff proc
 	; Save registers that will be modified
 	push ax
@@ -181,23 +162,23 @@ process_buff proc
 	while_end_of_buff:
 		; Check if we've reached the end of buffer
 		cmp bx, bytes_read
-		jb continue_processing   ; If below end, continue processing
-		jmp process_buff_end     ; Otherwise, end processing
+		jb continue_processing   ; Inverse condition with short jump
+		jmp process_buff_end     ; Unconditional jump has no range limitation (workaround because i reached the jmp limit)
 		continue_processing:
 
 		; Get the current character
 		mov al, buff[bx]	
 
-		; Check if current char is uppercase and is first character of line
+		; Check if current char is uppercase and if the current character is first character of the line
 		if_offset_is_zero_and_char_is_uppercase:
 			cmp al, 'A'               ; Is it less than 'A'?
 			jl else_if_char_is_newline
 			cmp al, 'Z'               ; Is it greater than 'Z'?
 			jg else_if_char_is_newline
 			cmp bx, line_start_offset  ; Is it first character of line?
-			je before_finish_line      ; If uppercase at line start, flag line
+			je before_finish_line      ; If uppercase at line start, count the line (occurance)
 		
-		; Check if current char is uppercase and follows whitespace (word start)
+		; Check if current char is uppercase and whitespace precedes it
 		or_if_char_is_uppercase_and_char_minus_one_is_whitespace:
 			; Check previous character
 			mov al, buff[bx - 1]
@@ -251,12 +232,12 @@ process_buff proc
 				mov bx, line_start_offset    ; BX = new position
 				jmp while_end_of_buff        ; Continue with next line
 
+		; if character is newline, update the line start offset and continue the loop
 		else_if_char_is_newline:
-			; Process character as potential newline
 			inc bx                     ; Move to next character
 			cmp al, 0ah                ; Is it a line feed?
-			je is_newline_char         ; If yes, handle as newline
-			jmp while_end_of_buff      ; Otherwise, continue scanning
+			je is_newline_char         ; Inverse condition with short jump
+			jmp while_end_of_buff      ; Unconditional jump has no range limitation (workaround because i reached the jmp limit)
 			is_newline_char:
 
 			; Found a newline - update line start to next character
