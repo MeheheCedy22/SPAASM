@@ -188,25 +188,25 @@ process_buff proc
 			je before_finish_line
 			jmp else_if_char_is_newline
 
+			; Found uppercase word - increment counter
 			before_finish_line:
-				; Found uppercase word - increment counter
 				inc occurance_count
+			; Scan to end of line (next LF)
 			finish_line_loop:
-				; Scan to end of line (next LF)
-				inc bx
+				inc bx					   ; Increment counter for next character
 				cmp bx, bytes_read         ; Check if we've reached buffer end
-			   	jae buffer_end_reached     ; Handle specially if at buffer end
-				mov al, buff[bx]
+			   	jae buffer_end_reached     ; If so, handle end of buffer
+				mov al, buff[bx]		   ; Get the current character
 				cmp al, 0ah                ; Check for LF (line feed)
 				je loop_end                ; If found, process line
 				jmp finish_line_loop       ; Otherwise continue scanning
 
+			; Process a matching line (contains uppercase word) and print it
 			loop_end:
-				; Process a matching line (contains uppercase word)
-				mov si, line_start_offset   ; SI = start of current line
-				mov di, bx                  ; DI = end of line (position of LF)
-				mov cx, di                  ; Save end position
-				sub cx, si                  ; CX = length of line
+				mov si, line_start_offset    ; SI = start of current line
+				mov di, bx                   ; DI = end of line (position of LF)
+				mov cx, di                   ; Save end position
+				sub cx, si                   ; CX = length of line
 				mov dx, offset buff_line_out ; DX = output buffer address
 				mov bx, cx                   ; BX = line length
 				mov cx, di                   ; Restore end position
@@ -220,19 +220,17 @@ process_buff proc
 					cmp di, bx                ; Reached end of line?
 					jle copy_line_loop        ; If not, continue copying
 
-				; Null terminate the output line buffer
 				mov buff_line_out[di], '$'   ; Add string terminator for DOS output
 
-				; Print the matched line
-				call print_line
+				call print_line ; Print the matched line
 
 				; Update to start of next line
 				mov line_start_offset, cx    ; Update line start to end of current + 1
 				inc line_start_offset
-				mov bx, line_start_offset    ; BX = new position
+				mov bx, line_start_offset    ; BX = new (current) position
 				jmp while_end_of_buff        ; Continue with next line
 
-		; if character is newline, update the line start offset and continue the loop
+		; check if character is newline, update the line start offset and continue the loop
 		else_if_char_is_newline:
 			inc bx                     ; Move to next character
 			cmp al, 0ah                ; Is it a line feed?
@@ -244,9 +242,8 @@ process_buff proc
 			mov line_start_offset, bx  ; Start of next line
 			jmp while_end_of_buff      ; Continue processing
 	
+	; Handle case where a line continues beyond buffer end treat current position as line end
 	buffer_end_reached:
-		; Handle case where a line continues beyond buffer end
-		; Treat current position as line end
 		dec bx                     ; Move back to last valid character
 		jmp loop_end               ; Process as end of line
 
