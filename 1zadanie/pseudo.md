@@ -1,4 +1,5 @@
 # Pseudokod na jadro programu
+Note: je to skoro to iste len s nejakymi malymi zmenami ktore som robil priamo v kode aby som to nemusel pisat este aj sem
 
 data segment:
  <!-- - flag na zistenie ci je found slovo ktore zacina na uppercase -->

@@ -1,8 +1,18 @@
+# zadanie 1
 1zadanie/Materialy_k_cviceniam_I
-1zadanie/spassm-zadanie-1-dinja
 1zadanie/TDCONFIG.TD
 1zadanie/hlwrld.asm
 1zadanie/parking.asm
 1zadanie/*.exe
 1zadanie/*.obj
 1zadanie/*.map
+1zadanie/*.txt
+
+# zadanie 2
+2zadanie/Materialy_k_cviceniam_II
+2zadanie/*.exe
+
+# zadanie3
+
+# all
+*.pdf
