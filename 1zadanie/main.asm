@@ -295,7 +295,6 @@ process_buff endp
 process_file proc
 		; call parse_filename to copy file name from command-line
 		call parse_filename
-		; print_file_name file_name   ; display the parsed file name
 
 		; open file
 		open_file file_name
