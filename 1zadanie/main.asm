@@ -9,7 +9,7 @@ stack 100h
 ; 32768
 ; 65536
 
-BUFFSIZE EQU 80 ; input buffer size 16 KiB
+BUFFSIZE EQU 256 ; input buffer size 16 KiB
 
 data segment
 	help db 'Author: Name Surname', 10, 13, 'Usage: MAIN.EXE [options] [files]', 10, 13, 'Options:', 10, 13, '  -h    Display this help message', 10, 13, '  -r    Display contents in reverse order', 10, 13, 'Files:', 10, 13, '  Specify one or more files to process.', 10, 13, 'Example: MAIN.EXE INPUT.TXT', 10, 13, 'Example: MAIN.EXE INPUT.TXT INPUT2.TXT', 10, 13, 'Example: MAIN.EXE -r INPUT.TXT', 10, 13, 'Example: MAIN.EXE -r INPUT.TXT INPUT2.TXT', 10, 13, '$'
@@ -26,6 +26,8 @@ data segment
 
 	occurance_count dw 0 ; occurance count
 	line_start_offset dw 0 ; line start offset (offset in the buffer where the line starts)
+
+	bytes_read dw 0  ; Track how many bytes were actually read
 
 	newline_str db 13, 10, '$'  ; CR+LF newline sequence for DOS
 	occurance_msg db 'Occurance count: ', '$' ; message for occurance count
@@ -200,6 +202,9 @@ read_file_to_buff proc
 	int 21h              ; call DOS function (number of bytes read in AX)
 	jc read_error        ; if error, jump to handler
 
+	; Store actual bytes read for safe buffer processing
+    mov bytes_read, ax   ; Add this line
+
 	jmp read_done
 
 read_error:
@@ -247,8 +252,8 @@ process_buff proc
 
 	while_end_of_buff:
 		; check for buffer end
-		cmp bx, BUFFSIZE
-		je process_buff_end
+	    cmp bx, bytes_read
+	    jae process_buff_end
 
 		; get the current character
 		mov al, buff[bx]	
@@ -277,6 +282,8 @@ process_buff proc
 				inc occurance_count
 			finish_line_loop:
 				inc bx
+				cmp bx, bytes_read         ; Check if we've reached the end of valid data
+  			 	jae buffer_end_reached     ; If at or beyond end of data, handle specially
 				mov al, buff[bx]
 				cmp al, 0ah ; check for LF
 				je loop_end
@@ -323,6 +330,13 @@ process_buff proc
 			; if (char is newline)
 			mov line_start_offset, bx ; set the new line start offset
 			jmp while_end_of_buff
+
+	
+	buffer_end_reached:
+    ; Handle case where line continues beyond current buffer
+    ; We'll treat this as a line end for now
+    dec bx                     ; Move back to last valid character
+    jmp loop_end
 
 	process_buff_end:
 		; pop all changed registers from the stack
