@@ -258,50 +258,45 @@ process_buff endp
 
 ; Process an input file to find lines with uppercase words
 process_file proc
-		; Parse the filename from command line
-		call parse_filename
+		
+	call parse_filename ; Parse the filename from command line
 
-		; Open the input file
-		open_file file_name
-		; Store file handle for later use
-		mov file_handle, ax
+	open_file file_name ; Open the input file
+	mov file_handle, ax ; Store file handle for later use
 
-		; Read and process file in chunks until EOF
+	; Read and process file in chunks until EOF
 	buff_loop:
 		mov ax, file_handle
 		call read_file_to_buff      ; Read chunk into buffer
 
-		; Check if any bytes were read
-		cmp bytes_read, 0
+		cmp bytes_read, 0 			; Check if any bytes were read
 		je end_of_file              ; If zero bytes read, at end of file
 
-		; Process current buffer contents
-		call process_buff
+		call process_buff 			; Process current buffer contents
 
 		; Continue reading if buffer was filled (more data available)
 		cmp bytes_read, BUFFSIZE
 		je buff_loop                ; If buffer full, read next chunk
 
+	; Print final count of matching lines
 	end_of_file:
-		; Print final count of matching lines
-		print_str newline_str       ; Print newline first
-		print_str occurance_msg     ; Print "Occurance count: "
+		print_str newline_str        ; Print newline as a separator
+		print_str occurance_msg      ; Print occurance message
 		print_number occurance_count ; Print the actual count value
 
-		; Close the file
-		close_file file_handle
+		close_file file_handle		; Close the file
 		jc file_close_error         ; Handle close error if it occurs
 
 		jmp process_file_end
 
+	; Handle file open error (print error message)
 	file_open_error:
-		; Handle file open error
 		print_str file_open_error_msg
 		print_str file_name
 		jmp process_file_end
 
+	; Handle file close error (print error message)
 	file_close_error:
-		; Handle file close error
 		print_str file_close_error_msg
 		print_str file_name
 		jmp process_file_end
@@ -313,11 +308,11 @@ process_file endp
 ; Handle command-line arguments and determine program operation
 handle_args proc
 	mov ax, 0 					; Initialize AX to zero
-	mov si, 80h 				; Command-line arguments start at 80h in PSP (Program Segment Prefix)
+	mov si, 80h 				; Get start of PSP {Command-line arguments start at 80h in PSP (Program Segment Prefix)}
 	mov cl, es:[si] 			; Get length of command-line arguments
-	cmp cl, 0                    ; Check if any arguments provided
+	cmp cl, 0                   ; Check if any arguments provided
 	je no_args 					; If no arguments, show usage info
-	call skip_whitespace         ; Skip any leading whitespace
+	call skip_whitespace        ; Skip any leading whitespace
 	cmp byte ptr es:[si], '-' 	; Check for option flag (-)
 	jne args_file 				; If not option, treat as filename
 	inc si 						; Move to character after '-'
@@ -350,12 +345,13 @@ handle_args endp
 start:
 	mov ax,data             ; Initialize data segment
 	mov ds,ax               ; DS = address of data segment
-	call handle_args        ; Process command line arguments
+	call handle_args        ; Process command line arguments and determine operation
 exit:
 	mov ah,4ch              ; DOS function 4Ch - terminate program
 	int 21h                 ; Call DOS to exit
 code ends
 end start
+; -------------------- END OF THE PROGRAM --------------------
 
 
 ; Zhodnotenie:
