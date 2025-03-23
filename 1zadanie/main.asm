@@ -38,8 +38,8 @@ data segment
 	bytes_read dw 0  ; Track how many bytes were actually read
 
 	buffer_start_idx dw 0    ; Where to start processing in current buffer
-    incomplete_line db 0     ; Flag: 1 if previous buffer ended with incomplete line
-    prev_has_uppercase db 0  ; Tracks if partial line has uppercase word
+	incomplete_line db 0     ; Flag: 1 if previous buffer ended with incomplete line
+	prev_has_uppercase db 0  ; Tracks if partial line has uppercase word
 
 	newline_str db 13, 10, '$'  ; CR+LF newline sequence for DOS
 	occurance_msg db 'Occurance count: ', '$' ; message for occurance count
@@ -138,7 +138,7 @@ read_file_to_buff proc
 	jc read_error        ; if error, jump to handler
 
 	; Store actual bytes read for safe buffer processing
-    mov bytes_read, ax   ; Add this line
+	mov bytes_read, ax   ; Add this line
 
 	jmp read_done
 
@@ -187,9 +187,9 @@ process_buff proc
 
 	while_end_of_buff:
 		; check for buffer end
-	    cmp bx, bytes_read
+		cmp bx, bytes_read
 		; jae process_buff_end
-	    jb continue_processing   ; Inverse condition with short jump
+		jb continue_processing   ; Inverse condition with short jump
 		jmp process_buff_end     ; Unconditional jump has no range limitation
 		continue_processing:
 
@@ -278,10 +278,10 @@ process_buff proc
 
 	
 	buffer_end_reached:
-    ; Handle case where line continues beyond current buffer
-    ; We'll treat this as a line end for now
-    dec bx                     ; Move back to last valid character
-    jmp loop_end
+	; Handle case where line continues beyond current buffer
+	; We'll treat this as a line end for now
+	dec bx                     ; Move back to last valid character
+	jmp loop_end
 
 	process_buff_end:
 		; pop all changed registers from the stack
@@ -307,15 +307,15 @@ process_file proc
 		call read_file_to_buff
 
 		; Check if we read anything
-    	cmp bytes_read, 0
-    	je end_of_file
+		cmp bytes_read, 0
+		je end_of_file
 
 		; process file
 		call process_buff
 
 		; Continue reading if we filled the buffer (not EOF)
-    	cmp bytes_read, BUFFSIZE
-    	je buff_loop
+		cmp bytes_read, BUFFSIZE
+		je buff_loop
 
 	end_of_file:
 		; print occurance count
