@@ -1,0 +1,12 @@
+{
+    "files.associations": {
+        "*.tex": "latex",
+        "*.rmd": "markdown",
+        "*.typ": "typst",
+        "*.bib": "bibtex",
+        "*.md": "markdown",
+        "*.toml": "toml",
+        "getopt.h": "c",
+        "features.h": "c"
+    }
+}
