@@ -11,6 +11,7 @@
 # zadanie 2
 2zadanie/**
 !2zadanie/*.c
+2zadanie/stash.c
 
 # zadanie3
 
