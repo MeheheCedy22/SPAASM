@@ -6,6 +6,8 @@
 
 // TODO: implement -help and -halt arguments when program is run as client
 
+// test
+
 void help()
 {
 	printf("Usage: ./main [OPTIONS]\n");
