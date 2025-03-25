@@ -3,11 +3,30 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <getopt.h>
+#include <stdbool.h>
+#include <string.h>
+#include <arpa/inet.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
 
-// TODO: implement -help and -halt arguments when program is run as client
+/* THESE ARE THE MAIN TASKS WHICH ARE MANDATORY OTHERS ARE OPTIONAL*/
+/* WHAT TO IMPLEMENT / TODOs / TASKS
+- [ ] -help ; -halt ; -quit program arguments
+- [ ] help, halt, quit commands in shell
+- [ ] at least 4 of these 6 special characters: # ; < > | \ i want to implement at least: # ; \ >
+- [ ] option to specify -p port and -u socket as program arguments
+- [ ] shell prompt should look like: time user@hostname$ use system calls and libraries to get time, user and hostname
+- [ ] running commands and file redirects must be implemented using syscalls CANNOT USE popen() OR SIMILAR
+- [ ] program argument -s is for server which will listen on socket and accept connections from clients and will do all the above work basically
+- [ ] program argument -c is for client which will establish connection to server through socket where client will send its stdin and will read the data from server for output
+- [ ] implement basic error handling for all the above tasks
+- [ ] no warning can be shown when compiling even with -Wall
+*/
 
 void help()
 {
+	printf("Author: Name Surname\n");
+	printf("About: This program is a simple interactive shell using client-server architectire.\n");
 	printf("Usage: ./main [OPTIONS]\n");
 	printf("Options:\n");
 	printf("  -h, \t\tShow this help message and exit\n");
@@ -27,14 +46,16 @@ int main(int argc, char **argv)
 {
 	int c;
 	int index;
-	char * pvalue = NULL;
-	char * uvalue = NULL;
-	char * lvalue = NULL;
-	char * Cvalue = NULL;
-  
+	char * p_value = NULL;
+	char * u_value = NULL;
+	char * l_value = NULL;
+	char * C_value = NULL;
+	bool h_flag, p_flag, u_flag, c_flag, s_flag, i_flag, v_flag, d_flag, l_flag, C_flag;
+	h_flag = p_flag = u_flag = c_flag = s_flag = i_flag = v_flag = d_flag = l_flag = C_flag = false;
+	
 	opterr = 0;
   
-	while ((c = getopt (argc, argv, "::hp:u:csivdl:C:")) != -1)
+	while ((c = getopt (argc, argv, "hp:u:csivdl:C:")) != -1)
 	{
 	  switch (c)
 		{
@@ -44,10 +65,10 @@ int main(int argc, char **argv)
 		case 'p':
 			// set port
 			printf("%c\n", c);
-			pvalue = optarg;
-			if (pvalue != NULL)
+			p_value = optarg;
+			if (p_value != NULL)
 			{
-				printf("Port: %s\n", pvalue);
+				printf("Port: %s\n", p_value);
 			}
 			else
 			{
@@ -57,10 +78,10 @@ int main(int argc, char **argv)
 		case 'u':
 			// set socket
 			printf("%c\n", c);
-			pvalue = optarg;
-			if (pvalue != NULL)
+			p_value = optarg;
+			if (p_value != NULL)
 			{
-				printf("Socket: %s\n", pvalue);
+				printf("Socket: %s\n", p_value);
 			}
 			else
 			{
@@ -91,10 +112,10 @@ int main(int argc, char **argv)
 		case 'l':
 			// write logs to a file
 			printf("%c\n", c);
-			pvalue = optarg;
-			if (pvalue != NULL)
+			p_value = optarg;
+			if (p_value != NULL)
 			{
-				printf("Log file: %s\n", pvalue);
+				printf("Log file: %s\n", p_value);
 			}
 			else
 			{
@@ -105,10 +126,10 @@ int main(int argc, char **argv)
 		case 'C':
 			// set config file
 			printf("%c\n", c);
-			pvalue = optarg;
-			if (pvalue != NULL)
+			p_value = optarg;
+			if (p_value != NULL)
 			{
-				printf("Config file: %s\n", pvalue);
+				printf("Config file: %s\n", p_value);
 			}
 			else
 			{
