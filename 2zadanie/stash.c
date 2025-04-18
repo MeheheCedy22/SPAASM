@@ -45,38 +45,38 @@ int read_key(void);
 
 // Gets a character without waiting for Enter key
 int getch(void) {
-    struct termios oldattr, newattr;
-    int ch;
-    
-    tcgetattr(STDIN_FILENO, &oldattr);
-    newattr = oldattr;
-    newattr.c_lflag &= ~(ICANON | ECHO);
-    tcsetattr(STDIN_FILENO, TCSANOW, &newattr);
-    
-    ch = getchar();
-    
-    tcsetattr(STDIN_FILENO, TCSANOW, &oldattr);
-    return ch;
+	struct termios oldattr, newattr;
+	int ch;
+	
+	tcgetattr(STDIN_FILENO, &oldattr);
+	newattr = oldattr;
+	newattr.c_lflag &= ~(ICANON | ECHO);
+	tcsetattr(STDIN_FILENO, TCSANOW, &newattr);
+	
+	ch = getchar();
+	
+	tcsetattr(STDIN_FILENO, TCSANOW, &oldattr);
+	return ch;
 }
 
 // Read a key including special keys like arrows
 int read_key(void) {
-    int ch = getch();
-    
-    if (ch == KEY_ESCAPE) {
-        ch = getch();
-        if (ch == '[') {
-            ch = getch();
-            switch (ch) {
-                case 'A': return KEY_UP;
-                case 'B': return KEY_DOWN;
-                case 'C': return KEY_RIGHT;
-                case 'D': return KEY_LEFT;
-            }
-        }
-    }
-    
-    return ch;
+	int ch = getch();
+	
+	if (ch == KEY_ESCAPE) {
+		ch = getch();
+		if (ch == '[') {
+			ch = getch();
+			switch (ch) {
+				case 'A': return KEY_UP;
+				case 'B': return KEY_DOWN;
+				case 'C': return KEY_RIGHT;
+				case 'D': return KEY_LEFT;
+			}
+		}
+	}
+	
+	return ch;
 }
 
 void help()
@@ -126,6 +126,9 @@ void prompt() {
 	printf("%s %s@%s$ ", time_str, username, hostname);
 	fflush(stdout);
 }
+
+
+// Replace the execute_command function with this enhanced version that supports output capture
 
 int execute_command(char *command, bool redirect_output, int output_fd) {
 	if (!command || strlen(command) == 0) {
@@ -195,9 +198,12 @@ int execute_command(char *command, bool redirect_output, int output_fd) {
 	}
 }
 
+// Now replace the handle_client function
+
 void handle_client(int client_socket) {
 	char buffer[BUFFER_SIZE];
 	ssize_t bytes_read;
+	int pipes[2];  // For capturing command output
 	
 	// Send initial welcome message
 	const char *welcome_msg = "Connected to shell server. Type commands or 'quit' to exit.\n";
@@ -230,11 +236,6 @@ void handle_client(int client_socket) {
 
 		buffer[bytes_read] = '\0';
 
-		// Echo the command back to the client with a prefix
-		char echo_buffer[BUFFER_SIZE + 20];
-		snprintf(echo_buffer, sizeof(echo_buffer), "> %s\n", buffer);
-		send(client_socket, echo_buffer, strlen(echo_buffer), 0);
-
 		// Remove newline character if present
 		if (buffer[bytes_read - 1] == '\n') {
 			buffer[bytes_read - 1] = '\0';
@@ -247,21 +248,24 @@ void handle_client(int client_socket) {
 			break;
 		}
 		
-		// Parse and execute commands with special characters
-		char *command = buffer;
-		char *output = NULL;
-		size_t output_size = 0;
-		FILE *output_stream = open_memstream(&output, &output_size);
+		// Create pipe for capturing command output
+		if (pipe(pipes) < 0) {
+			perror("pipe failed");
+			continue;
+		}
 		
-		// Save stdout to restore later
-		int stdout_fd = dup(STDOUT_FILENO);
+		// Save stdout and stderr
+		int stdout_backup = dup(STDOUT_FILENO);
+		int stderr_backup = dup(STDERR_FILENO);
 		
-		// Redirect stdout to our memory stream
-		dup2(fileno(output_stream), STDOUT_FILENO);
+		// Redirect stdout and stderr to the pipe
+		dup2(pipes[1], STDOUT_FILENO);
+		dup2(pipes[1], STDERR_FILENO);
+		close(pipes[1]);  // Close write end of pipe in parent
 		
 		// Process command: handle comments, command separator, and redirection
+		char *command = buffer;
 		char *cmd_copy = strdup(command);
-		char *cmd_ptr = cmd_copy;
 		
 		// Handle comments (ignore everything after #)
 		char *comment = strchr(cmd_copy, '#');
@@ -298,18 +302,17 @@ void handle_client(int client_socket) {
 				int result = execute_command(cmd_part, false, -1);
 				if (result == -1) {  // halt command
 					free(cmd_copy);
-					fclose(output_stream);
-					free(output);
 					
-					// Restore stdout
-					dup2(stdout_fd, STDOUT_FILENO);
-					close(stdout_fd);
+					// Restore stdout and stderr
+					dup2(stdout_backup, STDOUT_FILENO);
+					dup2(stderr_backup, STDERR_FILENO);
+					close(stdout_backup);
+					close(stderr_backup);
+					close(pipes[0]);
 					
 					const char *halt_msg = "Server halting command received\n";
 					send(client_socket, halt_msg, strlen(halt_msg), 0);
 					return;  // Signal to halt the server
-				} else if (result == -2) {  // quit command 
-					break;  // Exit command loop but not server
 				}
 			}
 			
@@ -319,23 +322,29 @@ void handle_client(int client_socket) {
 		
 		free(cmd_copy);
 		
-		// Flush and close the output stream
-		fflush(output_stream);
-		fclose(output_stream);
+		// Flush stdout to ensure all output is written to the pipe
+		fflush(stdout);
+		fflush(stderr);
 		
-		// Restore stdout
-		dup2(stdout_fd, STDOUT_FILENO);
-		close(stdout_fd);
+		// Restore stdout and stderr
+		dup2(stdout_backup, STDOUT_FILENO);
+		dup2(stderr_backup, STDERR_FILENO);
+		close(stdout_backup);
+		close(stderr_backup);
 		
-		// Send the captured output back to the client
+		// Read command output from pipe
+		char output_buffer[BUFFER_SIZE] = {0};
+		ssize_t output_size = read(pipes[0], output_buffer, BUFFER_SIZE - 1);
+		close(pipes[0]);  // Close read end of pipe
+		
 		if (output_size > 0) {
-			send(client_socket, output, output_size, 0);
+			output_buffer[output_size] = '\0';
+			// Send output to client
+			send(client_socket, output_buffer, output_size, 0);
 		}
-		
-		// Clean up
-		free(output);
 	}
 }
+
 
 int run_server(int port, bool daemon_mode, const char *log_file) {
 	int server_fd, client_socket;
@@ -448,6 +457,8 @@ int run_server(int port, bool daemon_mode, const char *log_file) {
 	return 0;
 }
 
+// Modify the run_client function to remove history navigation functionality
+
 int run_client(int port, const char *server_address) {
 	struct termios oldattr;
 	tcgetattr(STDIN_FILENO, &oldattr);
@@ -458,10 +469,7 @@ int run_client(int port, const char *server_address) {
 	struct sockaddr_in serv_addr;
 	char buffer[BUFFER_SIZE] = {0};
 	
-	// Add these variables for command editing right after declaring the buffer
-	char history[HISTORY_SIZE][MAX_COMMAND_LENGTH] = {{0}};
-	int history_count = 0;
-	int history_index = 0;
+	// Remove history arrays and just keep current command
 	char current_cmd[MAX_COMMAND_LENGTH] = {0};
 	int cursor_pos = 0;
 	printf("> ");  // Initial prompt
@@ -515,7 +523,32 @@ int run_client(int port, const char *server_address) {
 				break;
 			}
 			
+			buffer[bytes_read] = '\0'; // Ensure null termination
+			
+			// Clear the current line if there's a command in progress
+			if (cursor_pos > 0) {
+				printf("\r%*s\r", (int)(strlen(current_cmd) + 2), ""); // +2 for the "> " prompt
+			}
+			
+			// Print server response without any filtering
 			printf("%s", buffer);
+			fflush(stdout);
+			
+			// Check if we need to restore prompt
+			// Only show prompt if the server response doesn't end with one
+			if (bytes_read < 2 || buffer[bytes_read-2] != '$' || buffer[bytes_read-1] != ' ') {
+				// Reprint current command with prompt
+				if (cursor_pos > 0) {
+					printf("> %s", current_cmd);
+					// Move cursor back to correct position
+					for (int i = strlen(current_cmd); i > cursor_pos; i--) {
+						printf("\b");
+					}
+				} else {
+					printf("> ");
+				}
+				fflush(stdout);
+			}
 		}
 		
 		if (FD_ISSET(STDIN_FILENO, &readfds)) {
@@ -537,61 +570,11 @@ int run_client(int port, const char *server_address) {
 						cursor_pos++;
 					}
 					break;
-					
-				case KEY_UP:
-					if (history_count > 0 && history_index > 0) {
-						// Clear current line
-						printf("\r                                                  \r");
-						
-						// Go back in history
-						history_index--;
-						strcpy(current_cmd, history[history_index]);
-						cursor_pos = strlen(current_cmd);
-						
-						// Reprint prompt
-						printf("> %s", current_cmd);
-						fflush(stdout);
-					}
-					break;
-					
-				case KEY_DOWN:
-					// Clear current line
-					printf("\r                                                  \r");
-					
-					if (history_index < history_count - 1) {
-						history_index++;
-						strcpy(current_cmd, history[history_index]);
-					} else {
-						// At end of history, clear the command line
-						history_index = history_count;
-						memset(current_cmd, 0, sizeof(current_cmd));
-					}
-					cursor_pos = strlen(current_cmd);
-					
-					// Reprint prompt
-					printf("> %s", current_cmd);
-					fflush(stdout);
-					break;
+				
+				// Removed KEY_UP and KEY_DOWN cases
 					
 				case KEY_ENTER:
 					printf("\n");
-					
-					// Add to history if non-empty and not duplicate of last command
-					if (strlen(current_cmd) > 0 && 
-						(history_count == 0 || strcmp(current_cmd, history[history_count - 1]) != 0)) {
-						
-						if (history_count < HISTORY_SIZE) {
-							strcpy(history[history_count], current_cmd);
-							history_count++;
-						} else {
-							// Shift history
-							for (int i = 0; i < HISTORY_SIZE - 1; i++) {
-								strcpy(history[i], history[i + 1]);
-							}
-							strcpy(history[HISTORY_SIZE - 1], current_cmd);
-						}
-					}
-					history_index = history_count;
 					
 					// Send to server
 					send(sock, current_cmd, strlen(current_cmd), 0);
@@ -619,8 +602,8 @@ int run_client(int port, const char *server_address) {
 								strlen(current_cmd) - cursor_pos + 1);
 						cursor_pos--;
 						
-						// Redraw the line
-						printf("\r                                                  \r");
+						// Redraw the line - use a wider clear to ensure the prompt is fully cleared
+						printf("\r%*s\r", 80, ""); // Clear the entire line with 80 spaces
 						printf("> %s", current_cmd);
 						
 						// Move cursor back to correct position
