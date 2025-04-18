@@ -9,7 +9,7 @@ DEBUG_FLAGS = -g -DDEBUG
 TARGET = shell
 
 # Source files and object files
-SOURCES = main.c custom_queue.c
+SOURCES = shell.c custom_queue.c
 OBJECTS = $(SOURCES:.c=.o)
 
 # Default target builds the shell executable
