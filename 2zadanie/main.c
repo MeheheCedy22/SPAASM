@@ -8,6 +8,8 @@
 #include <arpa/inet.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <pthread.h>
+#include "custom_queue.h"
 
 /* THESE ARE THE MAIN TASKS WHICH ARE MANDATORY OTHERS ARE OPTIONAL*/
 /* WHAT TO IMPLEMENT / TODOs / TASKS
@@ -22,6 +24,9 @@
 - [ ] implement basic error handling for all the above tasks
 - [ ] no warning can be shown when compiling even with -Wall
 */
+
+
+#define THREAD_POOL_SIZE 10
 
 void help()
 {

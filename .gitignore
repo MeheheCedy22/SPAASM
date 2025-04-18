@@ -9,9 +9,13 @@
 1zadanie/*.txt
 
 # zadanie 2
-2zadanie/**
-!2zadanie/*.c
-2zadanie/stash.c
+2zadanie/not_src
+2zadanie/shell
+2zadanie/main
+2zadanie/*.pdf
+2zadanie/*.txt
+2zadanie/*.o
+2zadanie/*.d
 
 # zadanie3
 
