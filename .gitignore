@@ -10,11 +10,10 @@
 
 # zadanie 2
 2zadanie/not_src
-2zadanie/shell
-2zadanie/*.pdf
-2zadanie/*.txt
-2zadanie/*.o
-2zadanie/*.d
+2zadanie/**
+!2zadanie/*.c
+!2zadanie/*.h
+!2zadanie/Makefile
 
 # zadanie3
 

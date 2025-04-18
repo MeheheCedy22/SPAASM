@@ -45,6 +45,9 @@
 #define SERVER_BACKLOG 5 // Maximum number of pending connections
 #define THREAD_POOL_SIZE 10 // Number of threads in the pool
 
+// threading inspired by 
+// https://www.youtube.com/watch?v=Pg_4Jz8ZIH4
+// 
 pthread_t thread_pool[THREAD_POOL_SIZE];
 pthread_mutex_t queue_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t queue_cond_var = PTHREAD_COND_INITIALIZER;
