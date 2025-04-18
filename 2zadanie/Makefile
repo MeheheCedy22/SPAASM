@@ -1,4 +1,4 @@
-# Makefile for SPAASM 2zadanie project
+# TODO: rename 1st line in the `help` the echoing to "SPAASM 2zadanie shell program"
 
 # Compiler and flags
 CC = gcc
