@@ -8,10 +8,11 @@
 #include <arpa/inet.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <limits.h>
 #include <pthread.h>
 #include "custom_queue.h"
 
-/* THESE ARE THE MAIN TASKS WHICH ARE MANDATORY OTHERS ARE OPTIONAL*/
+/* THESE ARE THE MAIN TASKS WHICH ARE MANDATORY */
 /* WHAT TO IMPLEMENT / TODOs / TASKS
 - [ ] -help ; -halt ; -quit program arguments
 - [ ] help, halt, quit commands in shell
@@ -25,8 +26,28 @@
 - [ ] no warning can be shown when compiling even with -Wall
 */
 
+/* NOTES
+- need to use mutex for queue and thread pool
+- need to use condition variable for queue and thread pool
+- need to use signal handling for server and client
+- check the return statement of the dequeue to program not get stuck
+*/
 
-#define THREAD_POOL_SIZE 10
+/* GENERAL INFO
+- `g_` is used for global variables
+
+
+*/
+
+#define SERVER_PORT 60069
+#define BUFFER_SIZE 1024 // TODO - not sure about the number
+#define SOCKET_ERROR (-1)
+#define SERVER_BACKLOG 5 // Maximum number of pending connections
+#define THREAD_POOL_SIZE 10 // Number of threads in the pool
+
+pthread_t thread_pool[THREAD_POOL_SIZE];
+pthread_mutex_t queue_mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_cond_t queue_cond_var = PTHREAD_COND_INITIALIZER;
 
 void help()
 {
