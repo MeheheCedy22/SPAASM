@@ -52,6 +52,16 @@ pthread_t thread_pool[THREAD_POOL_SIZE];
 pthread_mutex_t queue_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t queue_cond_var = PTHREAD_COND_INITIALIZER;
 
+int check_socket_error(int socket_fd, const char *msg)
+{
+	if (socket_fd == SOCKET_ERROR)
+	{
+		perror(msg);
+		exit(1);
+	}
+	return socket_fd;
+}
+
 void help()
 {
 	printf("Author: Name Surname\n");
