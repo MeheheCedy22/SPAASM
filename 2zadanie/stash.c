@@ -18,6 +18,7 @@
 #include <sys/select.h>
 #include <netdb.h>
 #include <termios.h>
+#include <sys/ioctl.h>
 
 #define KEY_ESCAPE  0x001b
 #define KEY_ENTER   0x000a
@@ -25,13 +26,15 @@
 #define KEY_DOWN    0x0106
 #define KEY_RIGHT   0x0107
 #define KEY_LEFT    0x0108
-#define HISTORY_SIZE 20
 
 #define DEFAULT_PORT 60069
 #define DEFAULT_SOCKET "/tmp/socket"
 #define BUFFER_SIZE 1024
 #define MAX_COMMAND_LENGTH 1024
 #define MAX_HOSTNAME_LENGTH 256
+
+// Flag for server shutdown
+volatile sig_atomic_t server_running = 1;
 
 // Function prototypes
 void help();
@@ -42,6 +45,50 @@ int execute_command(char *command, bool redirect_output, int output_fd);
 void handle_client(int client_socket);
 int getch(void);
 int read_key(void);
+void sigchld_handler(int s);
+void handle_shutdown(int sig);
+void setup_signal_handlers();
+int send_all(int socket, const char *buffer, size_t length);
+
+// Signal handler to prevent zombie processes
+void sigchld_handler(int s) {
+	// Wait for all dead processes
+	while (waitpid(-1, NULL, WNOHANG) > 0);
+	
+	// Re-establish the signal handler
+	signal(SIGCHLD, sigchld_handler);
+}
+
+// Signal handler for server shutdown
+void handle_shutdown(int sig) {
+	server_running = 0;
+	printf("Server shutting down...\n");
+}
+
+// Set up all signal handlers
+void setup_signal_handlers() {
+	// Set up signal handlers for server shutdown
+	signal(SIGINT, handle_shutdown);
+	signal(SIGTERM, handle_shutdown);
+	signal(SIGUSR1, handle_shutdown);
+	
+	// Set up SIGCHLD handler to prevent zombie processes
+	signal(SIGCHLD, sigchld_handler);
+}
+
+// Safe send function to handle partial sends and errors
+int send_all(int socket, const char *buffer, size_t length) {
+	size_t sent = 0;
+	while (sent < length) {
+		ssize_t result = send(socket, buffer + sent, length - sent, 0);
+		if (result <= 0) {
+			if (errno == EINTR) continue;
+			return -1;
+		}
+		sent += result;
+	}
+	return 0;
+}
 
 // Gets a character without waiting for Enter key
 int getch(void) {
@@ -128,8 +175,7 @@ void prompt() {
 }
 
 
-// Replace the execute_command function with this enhanced version that supports output capture
-
+// Enhanced execute_command function with output capture
 int execute_command(char *command, bool redirect_output, int output_fd) {
 	if (!command || strlen(command) == 0) {
 		return 0;
@@ -198,8 +244,7 @@ int execute_command(char *command, bool redirect_output, int output_fd) {
 	}
 }
 
-// Now replace the handle_client function
-
+// Improved handle_client function with proper input validation and error handling
 void handle_client(int client_socket) {
 	char buffer[BUFFER_SIZE];
 	ssize_t bytes_read;
@@ -207,7 +252,10 @@ void handle_client(int client_socket) {
 	
 	// Send initial welcome message
 	const char *welcome_msg = "Connected to shell server. Type commands or 'quit' to exit.\n";
-	send(client_socket, welcome_msg, strlen(welcome_msg), 0);
+	if (send_all(client_socket, welcome_msg, strlen(welcome_msg)) < 0) {
+		perror("send failed");
+		return;
+	}
 	
 	while (1) {
 		// Send prompt
@@ -226,7 +274,10 @@ void handle_client(int client_socket) {
 		}
 		
 		snprintf(prompt_buffer, BUFFER_SIZE, "%s %s@%s$ ", time_str, username, hostname);
-		send(client_socket, prompt_buffer, strlen(prompt_buffer), 0);
+		if (send_all(client_socket, prompt_buffer, strlen(prompt_buffer)) < 0) {
+			perror("send failed");
+			break;
+		}
 		
 		// Receive command from client
 		bytes_read = recv(client_socket, buffer, BUFFER_SIZE - 1, 0);
@@ -237,14 +288,21 @@ void handle_client(int client_socket) {
 		buffer[bytes_read] = '\0';
 
 		// Remove newline character if present
-		if (buffer[bytes_read - 1] == '\n') {
+		if (bytes_read > 0 && buffer[bytes_read - 1] == '\n') {
 			buffer[bytes_read - 1] = '\0';
+		}
+		
+		// Validate input - remove non-printable characters
+		for (int i = 0; i < bytes_read; i++) {
+			if (!isprint(buffer[i]) && !isspace(buffer[i])) {
+				buffer[i] = ' ';
+			}
 		}
 		
 		// Process the command
 		if (strncmp(buffer, "quit", 4) == 0) {
 			const char *goodbye = "Disconnecting from server. Goodbye!\n";
-			send(client_socket, goodbye, strlen(goodbye), 0);
+			send_all(client_socket, goodbye, strlen(goodbye));
 			break;
 		}
 		
@@ -258,14 +316,38 @@ void handle_client(int client_socket) {
 		int stdout_backup = dup(STDOUT_FILENO);
 		int stderr_backup = dup(STDERR_FILENO);
 		
+		if (stdout_backup < 0 || stderr_backup < 0) {
+			perror("dup failed");
+			if (stdout_backup >= 0) close(stdout_backup);
+			if (stderr_backup >= 0) close(stderr_backup);
+			close(pipes[0]);
+			close(pipes[1]);
+			continue;
+		}
+		
 		// Redirect stdout and stderr to the pipe
-		dup2(pipes[1], STDOUT_FILENO);
-		dup2(pipes[1], STDERR_FILENO);
+		if (dup2(pipes[1], STDOUT_FILENO) < 0 || dup2(pipes[1], STDERR_FILENO) < 0) {
+			perror("dup2 failed");
+			close(stdout_backup);
+			close(stderr_backup);
+			close(pipes[0]);
+			close(pipes[1]);
+			continue;
+		}
 		close(pipes[1]);  // Close write end of pipe in parent
 		
 		// Process command: handle comments, command separator, and redirection
 		char *command = buffer;
 		char *cmd_copy = strdup(command);
+		if (!cmd_copy) {
+			perror("Memory allocation failed");
+			dup2(stdout_backup, STDOUT_FILENO);
+			dup2(stderr_backup, STDERR_FILENO);
+			close(stdout_backup);
+			close(stderr_backup);
+			close(pipes[0]);
+			continue;
+		}
 		
 		// Handle comments (ignore everything after #)
 		char *comment = strchr(cmd_copy, '#');
@@ -295,6 +377,7 @@ void handle_client(int client_socket) {
 						fprintf(stderr, "Error opening file %s: %s\n", filename, strerror(errno));
 					} else {
 						execute_command(cmd_part, true, fd);
+						close(fd);  // Close the file descriptor after use
 					}
 				}
 			} else {
@@ -311,8 +394,11 @@ void handle_client(int client_socket) {
 					close(pipes[0]);
 					
 					const char *halt_msg = "Server halting command received\n";
-					send(client_socket, halt_msg, strlen(halt_msg), 0);
-					return;  // Signal to halt the server
+					send_all(client_socket, halt_msg, strlen(halt_msg));
+					
+					// Signal main server to shut down
+					kill(getppid(), SIGUSR1);
+					return;
 				}
 			}
 			
@@ -332,25 +418,41 @@ void handle_client(int client_socket) {
 		close(stdout_backup);
 		close(stderr_backup);
 		
-		// Read command output from pipe
+		// Read command output from pipe with proper buffer size checking
 		char output_buffer[BUFFER_SIZE] = {0};
-		ssize_t output_size = read(pipes[0], output_buffer, BUFFER_SIZE - 1);
+		ssize_t bytes_available;
+		if (ioctl(pipes[0], FIONREAD, &bytes_available) < 0) {
+			perror("ioctl failed");
+			close(pipes[0]);
+			continue;
+		}
+		
+		if (bytes_available > BUFFER_SIZE - 1)
+			bytes_available = BUFFER_SIZE - 1;
+			
+		ssize_t output_size = read(pipes[0], output_buffer, bytes_available);
 		close(pipes[0]);  // Close read end of pipe
 		
 		if (output_size > 0) {
 			output_buffer[output_size] = '\0';
 			// Send output to client
-			send(client_socket, output_buffer, output_size, 0);
+			if (send_all(client_socket, output_buffer, output_size) < 0) {
+				perror("send failed");
+				break;
+			}
 		}
 	}
 }
 
-
+// Improved server function with proper shutdown and error handling
 int run_server(int port, bool daemon_mode, const char *log_file) {
 	int server_fd, client_socket;
 	struct sockaddr_in address;
 	int opt = 1;
 	int addrlen = sizeof(address);
+	
+	// Initialize server_running flag
+	server_running = 1;
 	
 	// Create socket file descriptor
 	if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) == 0) {
@@ -361,6 +463,7 @@ int run_server(int port, bool daemon_mode, const char *log_file) {
 	// Set socket options
 	if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt))) {
 		perror("setsockopt failed");
+		close(server_fd);
 		return -1;
 	}
 	
@@ -371,12 +474,14 @@ int run_server(int port, bool daemon_mode, const char *log_file) {
 	// Bind the socket to the port
 	if (bind(server_fd, (struct sockaddr *)&address, sizeof(address)) < 0) {
 		perror("bind failed");
+		close(server_fd);
 		return -1;
 	}
 	
 	// Listen for connections
 	if (listen(server_fd, 3) < 0) {
 		perror("listen failed");
+		close(server_fd);
 		return -1;
 	}
 	
@@ -388,12 +493,14 @@ int run_server(int port, bool daemon_mode, const char *log_file) {
 		
 		if (pid < 0) {
 			perror("fork failed");
+			close(server_fd);
 			exit(EXIT_FAILURE);
 		}
 		
 		if (pid > 0) {
 			// Parent process exits
 			printf("Daemon started with PID %d\n", pid);
+			close(server_fd);
 			exit(EXIT_SUCCESS);
 		}
 		
@@ -403,6 +510,7 @@ int run_server(int port, bool daemon_mode, const char *log_file) {
 		// Create new session
 		if (setsid() < 0) {
 			perror("setsid failed");
+			close(server_fd);
 			exit(EXIT_FAILURE);
 		}
 		
@@ -429,36 +537,59 @@ int run_server(int port, bool daemon_mode, const char *log_file) {
 		}
 	}
 	
-	// Accept and handle connections in a loop
-	while (1) {
-		if ((client_socket = accept(server_fd, (struct sockaddr *)&address, (socklen_t*)&addrlen)) < 0) {
-			perror("accept failed");
-			continue;
+	// Set up signal handlers
+	setup_signal_handlers();
+	
+	// Accept and handle connections in a loop with server_running flag
+	while (server_running) {
+		// Use select with timeout to make shutdown responsive
+		struct timeval tv = {1, 0};  // 1 second timeout
+		
+		fd_set readfds;
+		FD_ZERO(&readfds);
+		FD_SET(server_fd, &readfds);
+		
+		int activity = select(server_fd + 1, &readfds, NULL, NULL, &tv);
+		
+		if (activity < 0 && errno != EINTR) {
+			perror("select error");
+			break;
 		}
 		
-		// Handle client in a new process
-		pid_t pid = fork();
-		if (pid < 0) {
-			perror("fork failed");
-			close(client_socket);
-			continue;
-		} else if (pid == 0) {
-			// Child process handles the client
-			close(server_fd);  // Close listening socket in child
-			handle_client(client_socket);
-			close(client_socket);
-			exit(EXIT_SUCCESS);
-		} else {
-			// Parent process
-			close(client_socket);  // Close client socket in parent
+		if (!server_running) break;
+		
+		if (activity > 0 && FD_ISSET(server_fd, &readfds)) {
+			if ((client_socket = accept(server_fd, (struct sockaddr *)&address, (socklen_t*)&addrlen)) < 0) {
+				perror("accept failed");
+				continue;
+			}
+			
+			// Handle client in a new process
+			pid_t pid = fork();
+			if (pid < 0) {
+				perror("fork failed");
+				close(client_socket);
+				continue;
+			} else if (pid == 0) {
+				// Child process handles the client
+				close(server_fd);  // Close listening socket in child
+				handle_client(client_socket);
+				close(client_socket);
+				exit(EXIT_SUCCESS);
+			} else {
+				// Parent process
+				close(client_socket);  // Close client socket in parent
+			}
 		}
 	}
 	
+	// Cleanup code for graceful shutdown
+	close(server_fd);
+	printf("Server shut down successfully\n");
 	return 0;
 }
 
-// Modify the run_client function to remove history navigation functionality
-
+// Improved client function with better error handling
 int run_client(int port, const char *server_address) {
 	struct termios oldattr;
 	tcgetattr(STDIN_FILENO, &oldattr);
@@ -478,6 +609,7 @@ int run_client(int port, const char *server_address) {
 	// Create socket
 	if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
 		perror("Socket creation error");
+		tcsetattr(STDIN_FILENO, TCSANOW, &oldattr); // Restore terminal
 		return -1;
 	}
 	
@@ -487,12 +619,16 @@ int run_client(int port, const char *server_address) {
 	// Convert IPv4 and IPv6 addresses from text to binary form
 	if (inet_pton(AF_INET, server_address, &serv_addr.sin_addr) <= 0) {
 		perror("Invalid address/ Address not supported");
+		close(sock);
+		tcsetattr(STDIN_FILENO, TCSANOW, &oldattr); // Restore terminal
 		return -1;
 	}
 	
 	// Connect to server
 	if (connect(sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
 		perror("Connection Failed");
+		close(sock);
+		tcsetattr(STDIN_FILENO, TCSANOW, &oldattr); // Restore terminal
 		return -1;
 	}
 	
@@ -507,8 +643,13 @@ int run_client(int port, const char *server_address) {
 		
 		int max_fd = (STDIN_FILENO > sock) ? STDIN_FILENO : sock;
 		
-		// Wait for activity on stdin or socket
-		if (select(max_fd + 1, &readfds, NULL, NULL, NULL) < 0) {
+		// Use select with timeout to make client more responsive
+		struct timeval tv = {5, 0};  // 5 second timeout
+		
+		int activity = select(max_fd + 1, &readfds, NULL, NULL, &tv);
+		
+		if (activity < 0) {
+			if (errno == EINTR) continue;
 			perror("select failed");
 			break;
 		}
@@ -570,15 +711,18 @@ int run_client(int port, const char *server_address) {
 						cursor_pos++;
 					}
 					break;
-				
-				// Removed KEY_UP and KEY_DOWN cases
 					
 				case KEY_ENTER:
 					printf("\n");
 					
 					// Send to server
-					send(sock, current_cmd, strlen(current_cmd), 0);
-					send(sock, "\n", 1, 0);  // Make sure to send the newline
+					if (send_all(sock, current_cmd, strlen(current_cmd)) < 0 || 
+						send_all(sock, "\n", 1) < 0) {
+						printf("Error sending command to server\n");
+						tcsetattr(STDIN_FILENO, TCSANOW, &oldattr); // Restore terminal
+						close(sock);
+						return -1;
+					}
 					
 					// Check if user wants to quit
 					if (strcmp(current_cmd, "quit") == 0) {
@@ -640,6 +784,88 @@ int run_client(int port, const char *server_address) {
 	tcsetattr(STDIN_FILENO, TCSANOW, &oldattr);
 	
 	close(sock);
+	return 0;
+}
+
+// Improved interactive shell mode with better file descriptor management
+int interactive_shell_mode() {
+	char command[MAX_COMMAND_LENGTH];
+	
+	while (1) {
+		prompt();
+		
+		if (fgets(command, sizeof(command), stdin) == NULL) {
+			break; // EOF (Ctrl+D)
+		}
+		
+		// Remove trailing newline
+		size_t len = strlen(command);
+		if (len > 0 && command[len-1] == '\n') {
+			command[len-1] = '\0';
+		}
+		
+		// Process command with all special characters
+		char *cmd_copy = strdup(command);
+		if (!cmd_copy) {
+			perror("Memory allocation failed");
+			continue;
+		}
+		
+		// Handle escape character (\)
+		for (size_t i = 0; i < strlen(cmd_copy); i++) {
+			if (cmd_copy[i] == '\\' && i + 1 < strlen(cmd_copy)) {
+				// Escape the next character
+				memmove(&cmd_copy[i], &cmd_copy[i + 1], strlen(cmd_copy) - i);
+			}
+		}
+		
+		// Handle comments (ignore everything after #)
+		char *comment = strchr(cmd_copy, '#');
+		if (comment) {
+			*comment = '\0';
+		}
+		
+		// Handle command separators (;)
+		char *cmd_part = strtok(cmd_copy, ";");
+		while (cmd_part != NULL) {
+			// Handle redirection (>)
+			char *redirect = strchr(cmd_part, '>');
+			if (redirect) {
+				*redirect = '\0';  // Split the command at '>'
+				redirect++;        // Move to the filename
+				
+				// Skip leading whitespace
+				while (*redirect == ' ' || *redirect == '\t') redirect++;
+				
+				// Get the filename
+				char filename[256] = {0};
+				sscanf(redirect, "%255s", filename);
+				
+				if (strlen(filename) > 0) {
+					int fd = open(filename, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+					if (fd < 0) {
+						fprintf(stderr, "Error opening file %s: %s\n", filename, strerror(errno));
+					} else {
+						execute_command(cmd_part, true, fd);
+						close(fd);  // Close file descriptor after use
+					}
+				}
+			} else {
+				// Regular command execution
+				int result = execute_command(cmd_part, false, -1);
+				if (result == -1 || result == -2) {  // halt or quit command
+					free(cmd_copy);
+					return 0;
+				}
+			}
+			
+			// Get next command part
+			cmd_part = strtok(NULL, ";");
+		}
+		
+		free(cmd_copy);
+	}
+	
 	return 0;
 }
 
@@ -768,78 +994,7 @@ int main(int argc, char **argv)
 	}
 	else {
 		// Interactive shell mode
-		char command[MAX_COMMAND_LENGTH];
-		
-		while (1) {
-			prompt();
-			
-			if (fgets(command, sizeof(command), stdin) == NULL) {
-				break; // EOF (Ctrl+D)
-			}
-			
-			// Remove trailing newline
-			size_t len = strlen(command);
-			if (len > 0 && command[len-1] == '\n') {
-				command[len-1] = '\0';
-			}
-			
-			// Process command with all special characters
-			char *cmd_copy = strdup(command);
-			char *cmd_ptr = cmd_copy;
-			
-			// Handle escape character (\)
-			for (size_t i = 0; i < strlen(cmd_copy); i++) {
-				if (cmd_copy[i] == '\\' && i + 1 < strlen(cmd_copy)) {
-					// Escape the next character
-					memmove(&cmd_copy[i], &cmd_copy[i + 1], strlen(cmd_copy) - i);
-				}
-			}
-			
-			// Handle comments (ignore everything after #)
-			char *comment = strchr(cmd_copy, '#');
-			if (comment) {
-				*comment = '\0';
-			}
-			
-			// Handle command separators (;)
-			char *cmd_part = strtok(cmd_copy, ";");
-			while (cmd_part != NULL) {
-				// Handle redirection (>)
-				char *redirect = strchr(cmd_part, '>');
-				if (redirect) {
-					*redirect = '\0';  // Split the command at '>'
-					redirect++;        // Move to the filename
-					
-					// Skip leading whitespace
-					while (*redirect == ' ' || *redirect == '\t') redirect++;
-					
-					// Get the filename
-					char filename[256] = {0};
-					sscanf(redirect, "%255s", filename);
-					
-					if (strlen(filename) > 0) {
-						int fd = open(filename, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-						if (fd < 0) {
-							fprintf(stderr, "Error opening file %s: %s\n", filename, strerror(errno));
-						} else {
-							execute_command(cmd_part, true, fd);
-						}
-					}
-				} else {
-					// Regular command execution
-					int result = execute_command(cmd_part, false, -1);
-					if (result == -1 || result == -2) {  // halt or quit command
-						free(cmd_copy);
-						return 0;
-					}
-				}
-				
-				// Get next command part
-				cmd_part = strtok(NULL, ";");
-			}
-			
-			free(cmd_copy);
-		}
+		return interactive_shell_mode();
 	}
 
 	return 0;
