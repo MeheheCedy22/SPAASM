@@ -144,6 +144,10 @@ void prompt() {
 
 // Worker function for thread pool
 void* thread_function(void* arg) {
+	// Set thread to be cancelable
+	pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
+	pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
+
 	while (server_running) {
 		int *pclient;
 		pthread_mutex_lock(&queue_mutex);
@@ -199,6 +203,12 @@ int execute_command(char *command, bool redirect_output, int output_fd) {
 	} else if (strcmp(cmd, "halt") == 0) {
 		printf("Server halting...\n");
 		server_running = 0; // Signal to halt the server
+
+		// Force immediate return to main to handle shutdown
+		if (getpid() == getpgid(0)) { // Only if this is the main process
+			exit(0); // Force immediate exit
+		}
+
 		return -1; // Signal to halt the server
 	} else if (strcmp(cmd, "quit") == 0) {
 		printf("Exiting shell...\n");
@@ -570,12 +580,20 @@ int run_server(const char *port_str, const char *socket_path, bool verbose, cons
 	}
 	
 	// Clean up and wait for threads to finish
-	for (int i = 0; i < THREAD_POOL_SIZE; i++) {
-		pthread_cond_broadcast(&queue_cond_var);
-	}
-	
-	for (int i = 0; i < THREAD_POOL_SIZE; i++) {
-		pthread_join(thread_pool[i], NULL);
+	if (server_running) {
+		// Normal shutdown - wait for threads
+		for (int i = 0; i < THREAD_POOL_SIZE; i++) {
+			pthread_cond_broadcast(&queue_cond_var);
+		}
+		
+		for (int i = 0; i < THREAD_POOL_SIZE; i++) {
+			pthread_join(thread_pool[i], NULL);
+		}
+	} else {
+		// Halt command received - force immediate shutdown
+		for (int i = 0; i < THREAD_POOL_SIZE; i++) {
+			pthread_cancel(thread_pool[i]);  // Cancel threads immediately
+		}
 	}
 	
 	// Close server socket
