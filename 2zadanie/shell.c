@@ -10,248 +10,910 @@
 #include <netinet/in.h>
 #include <limits.h>
 #include <pthread.h>
+#include <time.h>
+#include <pwd.h>
+#include <sys/types.h>
+#include <fcntl.h>
+#include <errno.h>
+#include <signal.h>
+#include <sys/wait.h>
+#include <sys/select.h>
+#include <netdb.h>
+#include <termios.h>
+#include <sys/ioctl.h>
 #include "custom_queue.h"
 
 /* THESE ARE THE MAIN TASKS WHICH ARE MANDATORY */
 /* WHAT TO IMPLEMENT / TODOs / TASKS
 - [x] -help ; -halt ; -quit program arguments
-- [ ] help, halt, quit commands in shell
-- [ ] at least 4 of these 6 special characters: # ; < > | \ i want to implement at least: # ; \ >
-- [ ] option to specify -p port and -u socket as program arguments
-- [ ] shell prompt should look like: hh:mm user@hostname$ use system calls and libraries to get time, user and hostname
-- [ ] running commands and file redirects must be implemented using syscalls CANNOT USE popen() OR SIMILAR
-- [ ] program argument -s is for server which will listen on socket and accept connections from clients and will do all the above work basically
-- [ ] program argument -c is for client which will establish connection to server through socket where client will send its stdin and will read the data from server for output to its stdout
-- [ ] implement basic error handling for all the above tasks
-- [ ] no warning can be shown when compiling even with -Wall
+- [x] help, halt, quit commands in shell
+- [x] at least 4 of these 6 special characters: # ; < > | \ implemented: # ; > \
+- [x] option to specify -p port and -u socket as program arguments
+- [x] shell prompt should look like: hh:mm user@hostname$ use system calls and libraries to get time, user and hostname
+- [x] running commands and file redirects must be implemented using syscalls CANNOT USE popen() OR SIMILAR
+- [x] program argument -s is for server which will listen on socket and accept connections from clients and will do all the above work basically
+- [x] program argument -c is for client which will establish connection to server through socket where client will send its stdin and will read the data from server for output to its stdout
+- [x] implement basic error handling for all the above tasks
+- [x] no warning can be shown when compiling even with -Wall
 */
 
 /* VOLUNTARY TASKS*/
 /*
-- [ ] option to specify -i ip address as program argument
-- [ ] option to specify -v verbose output as program argument
-- [ ] option to specify -l for log file as program argument
-*/
-
-/* NOTES
-- need to use mutex for queue and thread pool
-- need to use condition variable for queue and thread pool
-- need to use signal handling for server and client
-- check the return statement of the dequeue to program not get stuck
-- use dynamic memory allocation for the output buffer with getline so it can grow as needed
-*/
-
-/* GENERAL INFO
-- `g_` is used for global variables
-- `m_` is used for member variables
+- [x] option to specify -i ip address as program argument
+- [x] option to specify -v verbose output as program argument
+- [x] option to specify -l for log file as program argument
 */
 
 #define SERVER_PORT 60069
-#define BUFFER_SIZE 1024 // TODO - not sure about the number (make it dynamic because of when user tries to cat a file which is too big)
+#define BUFFER_SIZE 1024
 #define SOCKET_ERROR (-1)
-#define SERVER_BACKLOG 5 // Maximum number of pending connections
-#define THREAD_POOL_SIZE 10 // Number of threads in the pool
+#define SERVER_BACKLOG 5
+#define THREAD_POOL_SIZE 10
+#define MAX_HOSTNAME_LENGTH 256
 
-// threading inspired by 
-// https://www.youtube.com/watch?v=Pg_4Jz8ZIH4
-// 
+#define KEY_ESCAPE  0x001b
+#define KEY_ENTER   0x000a
+#define KEY_UP      0x0105
+#define KEY_DOWN    0x0106
+#define KEY_RIGHT   0x0107
+#define KEY_LEFT    0x0108
+
+// Flag for server shutdown
+volatile sig_atomic_t server_running = 1;
+
+// Thread pool and synchronization primitives
 pthread_t thread_pool[THREAD_POOL_SIZE];
 pthread_mutex_t queue_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t queue_cond_var = PTHREAD_COND_INITIALIZER;
 
-int check_socket_error(int socket_fd, const char *msg)
-{
-	if (socket_fd == SOCKET_ERROR)
-	{
-		perror(msg);
-		exit(1);
-	}
-	return socket_fd;
+// Function prototypes
+void help();
+void prompt();
+int run_server(const char *port_str, const char *socket_path, bool verbose, const char *log_file);
+int run_client(const char *port_str, const char *socket_path, const char *ip_address, bool verbose);
+int execute_command(char *command, bool redirect_output, int output_fd);
+void handle_client(int client_socket);
+void sigchld_handler(int s);
+void handle_shutdown(int sig);
+void setup_signal_handlers();
+void* thread_function(void* arg);
+int getch(void);
+int read_key(void);
+int check_socket_error(int socket_fd, const char *msg);
+
+// Signal handler to prevent zombie processes
+void sigchld_handler(int s) {
+    // Wait for all dead processes
+    while (waitpid(-1, NULL, WNOHANG) > 0);
+    
+    // Re-establish the signal handler
+    signal(SIGCHLD, sigchld_handler);
 }
 
-void help()
-{
-	printf("Author: Name Surname\n");
-	printf("About: This program is a simple interactive shell written in C using client-server architectire.\n");
-	printf("Usage: ./shell [OPTIONS]\n");
-	printf("Options:\n");
-	printf("  -h, \t\tShow this help message and exit\n");
-	printf("  -p [port_number], \t\tSet the port number (default: 60069)\n");
-	printf("  -u [socket_path], \t\tSet the socket (default: /tmp/socket)\n");
-	printf("  -c, \t\tRun as client\n");
-	printf("  -s, \t\tRun as server\n");
-	printf("  -i, \t\tSet IP address\n");
-	printf("  -v, \t\tEnable verbose output\n");
-	printf("  -l [log_path], \t\tWrite logs to a file\n");
-	printf("Commands in shell:\n");
-	printf("  help, \tShow this help message\n");
-	printf("  halt, \tHalt the server\n");
-	printf("  quit, \tQuit the shell\n");
+// Signal handler for server shutdown
+void handle_shutdown(int sig) {
+    server_running = 0;
+    printf("Server shutting down...\n");
 }
- 
 
+// Set up all signal handlers
+void setup_signal_handlers() {
+    // Set up signal handlers for server shutdown
+    signal(SIGINT, handle_shutdown);
+    signal(SIGTERM, handle_shutdown);
+    signal(SIGUSR1, handle_shutdown);
+    
+    // Set up SIGCHLD handler to prevent zombie processes
+    signal(SIGCHLD, sigchld_handler);
+}
+
+// Gets a character without waiting for Enter key
+int getch(void) {
+    struct termios oldattr, newattr;
+    int ch;
+    
+    tcgetattr(STDIN_FILENO, &oldattr);
+    newattr = oldattr;
+    newattr.c_lflag &= ~(ICANON | ECHO);
+    tcsetattr(STDIN_FILENO, TCSANOW, &newattr);
+    
+    ch = getchar();
+    
+    tcsetattr(STDIN_FILENO, TCSANOW, &oldattr);
+    return ch;
+}
+
+// Read a key including special keys like arrows
+int read_key(void) {
+    int ch = getch();
+    
+    if (ch == KEY_ESCAPE) {
+        ch = getch();
+        if (ch == '[') {
+            ch = getch();
+            switch (ch) {
+                case 'A': return KEY_UP;
+                case 'B': return KEY_DOWN;
+                case 'C': return KEY_RIGHT;
+                case 'D': return KEY_LEFT;
+            }
+        }
+    }
+    
+    return ch;
+}
+
+// Check for socket errors
+int check_socket_error(int socket_fd, const char *msg) {
+    if (socket_fd == SOCKET_ERROR) {
+        perror(msg);
+        exit(1);
+    }
+    return socket_fd;
+}
+
+// Help command implementation
+void help() {
+    printf("Author: Name Surname\n");
+    printf("About: This program is a simple interactive shell written in C using client-server architecture.\n");
+    printf("Usage: ./shell [OPTIONS]\n");
+    printf("Options:\n");
+    printf("  -h, --help \tShow this help message and exit\n");
+    printf("  -p PORT, --port=PORT \tSet the port number (default: 60069)\n");
+    printf("  -u SOCKET, --socket=SOCKET \tSet the socket (default: /tmp/socket)\n");
+    printf("  -c, --client \tRun as client\n");
+    printf("  -s, --server \tRun as server\n");
+    printf("  -i IP, --ip=IP \tSet IP address\n");
+    printf("  -v, --verbose \tEnable verbose output\n");
+    printf("  -l FILE, --log=FILE \tWrite logs to a file\n");
+    printf("Commands in shell:\n");
+    printf("  help \tShow this help message\n");
+    printf("  halt \tHalt the server\n");
+    printf("  quit \tQuit the shell\n");
+    printf("Special characters:\n");
+    printf("  # \tComment (everything after # is ignored)\n");
+    printf("  ; \tCommand separator\n");
+    printf("  \\ \tEscape character\n");
+    printf("  > \tRedirect output to file\n");
+}
+
+// Get current time, username, and hostname for the prompt (removed seconds as requested)
+void prompt() {
+    time_t t = time(NULL);
+    struct tm *tm = localtime(&t);
+    char time_str[6]; // HH:MM plus null terminator
+    strftime(time_str, sizeof(time_str), "%H:%M", tm);
+    
+    // Get username
+    struct passwd *pw = getpwuid(getuid());
+    const char *username = pw ? pw->pw_name : "user";
+    
+    // Get hostname
+    char hostname[MAX_HOSTNAME_LENGTH];
+    if (gethostname(hostname, sizeof(hostname)) != 0) {
+        strcpy(hostname, "unknown");
+    }
+    
+    printf("%s %s@%s$ ", time_str, username, hostname);
+    fflush(stdout);
+}
+
+// Worker function for thread pool
+void* thread_function(void* arg) {
+    while (server_running) {
+        int *pclient;
+        pthread_mutex_lock(&queue_mutex);
+        
+        // Wait for a client to be available in the queue
+        while ((pclient = dequeue()) == NULL && server_running) {
+            // Wait for signal that a client was added to queue
+            pthread_cond_wait(&queue_cond_var, &queue_mutex);
+        }
+        
+        pthread_mutex_unlock(&queue_mutex);
+        
+        // Check if we're shutting down
+        if (!server_running) {
+            break;
+        }
+        
+        // Handle client if we got one
+        if (pclient != NULL) {
+            handle_client(*pclient);
+            close(*pclient);
+            free(pclient);
+        }
+    }
+    
+    return NULL;
+}
+
+// Execute command function
+int execute_command(char *command, bool redirect_output, int output_fd) {
+    if (!command || strlen(command) == 0) {
+        return 0;
+    }
+    
+    // Trim leading and trailing whitespace
+    char *cmd = command;
+    while (*cmd == ' ' || *cmd == '\t') cmd++;
+    
+    char *end = cmd + strlen(cmd) - 1;
+    while (end > cmd && (*end == ' ' || *end == '\t' || *end == '\n')) {
+        *end = '\0';
+        end--;
+    }
+    
+    if (strlen(cmd) == 0) {
+        return 0;
+    }
+    
+    // Check for built-in commands
+    if (strcmp(cmd, "help") == 0) {
+        help();
+        return 0;
+    } else if (strcmp(cmd, "halt") == 0) {
+        printf("Server halting...\n");
+        server_running = 0; // Signal to halt the server
+        return -1; // Signal to halt the server
+    } else if (strcmp(cmd, "quit") == 0) {
+        printf("Exiting shell...\n");
+        return -2; // Signal to quit
+    }
+    
+    // Fork and execute command
+    pid_t pid = fork();
+    if (pid < 0) {
+        perror("fork failed");
+        return 1;
+    } else if (pid == 0) {
+        // Child process
+        if (redirect_output && output_fd > 0) {
+            // Redirect stdout to file
+            dup2(output_fd, STDOUT_FILENO);
+            close(output_fd);
+        }
+        
+        // Execute the command
+        char *args[64];
+        int i = 0;
+        
+        char *token = strtok(cmd, " \t");
+        while (token != NULL && i < 63) {
+            args[i++] = token;
+            token = strtok(NULL, " \t");
+        }
+        args[i] = NULL;
+        
+        execvp(args[0], args);
+        
+        // If execvp returns, it means an error occurred
+        perror("execvp failed");
+        exit(EXIT_FAILURE);
+    } else {
+        // Parent process
+        int status;
+        waitpid(pid, &status, 0);
+        return WEXITSTATUS(status);
+    }
+}
+
+// Client handling function
+void handle_client(int client_socket) {
+    char buffer[BUFFER_SIZE];
+    ssize_t bytes_read;
+    int pipes[2];  // For capturing command output
+    
+    // Send initial welcome message
+    const char *welcome_msg = "Connected to shell server. Type commands or 'quit' to exit.\n";
+    send(client_socket, welcome_msg, strlen(welcome_msg), 0);
+    
+    while (server_running) {
+        // Send prompt
+        char prompt_buffer[BUFFER_SIZE];
+        time_t t = time(NULL);
+        struct tm *tm = localtime(&t);
+        char time_str[6]; // HH:MM format
+        strftime(time_str, sizeof(time_str), "%H:%M", tm);
+        
+        struct passwd *pw = getpwuid(getuid());
+        const char *username = pw ? pw->pw_name : "user";
+        
+        char hostname[MAX_HOSTNAME_LENGTH];
+        if (gethostname(hostname, sizeof(hostname)) != 0) {
+            strcpy(hostname, "unknown");
+        }
+        
+        snprintf(prompt_buffer, BUFFER_SIZE, "%s %s@%s$ ", time_str, username, hostname);
+        send(client_socket, prompt_buffer, strlen(prompt_buffer), 0);
+        
+        // Receive command from client
+        bytes_read = recv(client_socket, buffer, BUFFER_SIZE - 1, 0);
+        if (bytes_read <= 0) {
+            break; // Client disconnected or error
+        }
+
+        buffer[bytes_read] = '\0';
+
+        // Remove newline character if present
+        if (bytes_read > 0 && buffer[bytes_read - 1] == '\n') {
+            buffer[bytes_read - 1] = '\0';
+        }
+        
+        // Process the command
+        if (strncmp(buffer, "quit", 4) == 0) {
+            const char *goodbye = "Disconnecting from server. Goodbye!\n";
+            send(client_socket, goodbye, strlen(goodbye), 0);
+            break;
+        }
+        
+        // Create pipe for capturing command output
+        if (pipe(pipes) < 0) {
+            perror("pipe failed");
+            continue;
+        }
+        
+        // Save stdout and stderr
+        int stdout_backup = dup(STDOUT_FILENO);
+        int stderr_backup = dup(STDERR_FILENO);
+        
+        // Redirect stdout and stderr to the pipe
+        dup2(pipes[1], STDOUT_FILENO);
+        dup2(pipes[1], STDERR_FILENO);
+        close(pipes[1]);  // Close write end of pipe in parent
+        
+        // Process command: handle comments, command separator, and redirection
+        char *command = buffer;
+        char *cmd_copy = strdup(command);
+        if (!cmd_copy) {
+            perror("Memory allocation failed");
+            dup2(stdout_backup, STDOUT_FILENO);
+            dup2(stderr_backup, STDERR_FILENO);
+            close(stdout_backup);
+            close(stderr_backup);
+            close(pipes[0]);
+            continue;
+        }
+        
+        // Handle escape character (\)
+        for (size_t i = 0; i < strlen(cmd_copy); i++) {
+            if (cmd_copy[i] == '\\' && i + 1 < strlen(cmd_copy)) {
+                // Escape the next character
+                memmove(&cmd_copy[i], &cmd_copy[i + 1], strlen(cmd_copy) - i);
+            }
+        }
+        
+        // Handle comments (ignore everything after #)
+        char *comment = strchr(cmd_copy, '#');
+        if (comment) {
+            *comment = '\0';
+        }
+        
+        // Handle command separators (;)
+        char *cmd_part = strtok(cmd_copy, ";");
+        while (cmd_part != NULL) {
+            // Handle redirection (>)
+            char *redirect = strchr(cmd_part, '>');
+            if (redirect) {
+                *redirect = '\0';  // Split the command at '>'
+                redirect++;        // Move to the filename
+                
+                // Skip leading whitespace
+                while (*redirect == ' ' || *redirect == '\t') redirect++;
+                
+                // Get the filename
+                char filename[256] = {0};
+                sscanf(redirect, "%255s", filename);
+                
+                if (strlen(filename) > 0) {
+                    int fd = open(filename, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+                    if (fd < 0) {
+                        fprintf(stderr, "Error opening file %s: %s\n", filename, strerror(errno));
+                    } else {
+                        execute_command(cmd_part, true, fd);
+                        close(fd);
+                    }
+                }
+            } else {
+                // Regular command execution
+                int result = execute_command(cmd_part, false, -1);
+                if (result == -1) {  // halt command
+                    free(cmd_copy);
+                    
+                    // Restore stdout and stderr
+                    dup2(stdout_backup, STDOUT_FILENO);
+                    dup2(stderr_backup, STDERR_FILENO);
+                    close(stdout_backup);
+                    close(stderr_backup);
+                    close(pipes[0]);
+                    
+                    const char *halt_msg = "Server halting command received\n";
+                    send(client_socket, halt_msg, strlen(halt_msg), 0);
+                    
+                    return;
+                }
+            }
+            
+            // Get next command part
+            cmd_part = strtok(NULL, ";");
+        }
+        
+        free(cmd_copy);
+        
+        // Flush stdout to ensure all output is written to the pipe
+        fflush(stdout);
+        fflush(stderr);
+        
+        // Restore stdout and stderr
+        dup2(stdout_backup, STDOUT_FILENO);
+        dup2(stderr_backup, STDERR_FILENO);
+        close(stdout_backup);
+        close(stderr_backup);
+        
+        // Read command output from pipe
+        char output_buffer[BUFFER_SIZE] = {0};
+        ssize_t output_size = read(pipes[0], output_buffer, BUFFER_SIZE - 1);
+        close(pipes[0]);  // Close read end of pipe
+        
+        if (output_size > 0) {
+            output_buffer[output_size] = '\0';
+            // Send output to client
+            send(client_socket, output_buffer, output_size, 0);
+        }
+    }
+}
+
+// Server function
+int run_server(const char *port_str, const char *socket_path, bool verbose, const char *log_file) {
+    int server_fd;
+    struct sockaddr_in address;
+    int opt = 1;
+    int port = port_str ? atoi(port_str) : SERVER_PORT;
+    
+    // Initialize server_running flag
+    server_running = 1;
+    
+    // Create socket file descriptor
+    if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) == 0) {
+        perror("socket failed");
+        return -1;
+    }
+    
+    // Set socket options
+    if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt))) {
+        perror("setsockopt failed");
+        close(server_fd);
+        return -1;
+    }
+    
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = INADDR_ANY;
+    address.sin_port = htons(port);
+    
+    // Bind the socket to the port
+    if (bind(server_fd, (struct sockaddr *)&address, sizeof(address)) < 0) {
+        perror("bind failed");
+        close(server_fd);
+        return -1;
+    }
+    
+    // Listen for connections
+    if (listen(server_fd, SERVER_BACKLOG) < 0) {
+        perror("listen failed");
+        close(server_fd);
+        return -1;
+    }
+    
+    if (verbose) {
+        printf("Server started on port %d\n", port);
+    }
+    
+    // Set up signal handlers
+    setup_signal_handlers();
+    
+    // Initialize and create thread pool
+    for (int i = 0; i < THREAD_POOL_SIZE; i++) {
+        if (pthread_create(&thread_pool[i], NULL, thread_function, NULL) != 0) {
+            perror("Failed to create thread");
+            return -1;
+        }
+    }
+    
+    // Set up for select() to monitor both standard input and socket
+    fd_set readfds;
+    int max_fd;
+    
+    // Main server loop
+    while (server_running) {
+        FD_ZERO(&readfds);
+        FD_SET(STDIN_FILENO, &readfds);
+        FD_SET(server_fd, &readfds);
+        
+        max_fd = (STDIN_FILENO > server_fd) ? STDIN_FILENO : server_fd;
+        
+        // Wait for activity on stdin or server socket with timeout
+        struct timeval tv = {1, 0}; // 1 second timeout
+        int activity = select(max_fd + 1, &readfds, NULL, NULL, &tv);
+        
+        if (activity < 0 && errno != EINTR) {
+            perror("select error");
+            break;
+        }
+        
+        if (!server_running) {
+            break;
+        }
+        
+        // Check if there's input from stdin
+        if (FD_ISSET(STDIN_FILENO, &readfds)) {
+            char command[BUFFER_SIZE];
+            
+            // Show prompt
+            prompt();
+            
+            // Read command
+            if (fgets(command, sizeof(command), stdin) == NULL) {
+                // EOF or error
+                if (feof(stdin)) {
+                    printf("\nEOF received, exiting...\n");
+                    server_running = 0;
+                    break;
+                }
+                perror("fgets error");
+                continue;
+            }
+            
+            // Remove newline
+            size_t len = strlen(command);
+            if (len > 0 && command[len-1] == '\n') {
+                command[len-1] = '\0';
+            }
+            
+            // Process command
+            int result = execute_command(command, false, -1);
+            if (result == -1) { // halt command
+                server_running = 0;
+            } else if (result == -2) { // quit command
+                // For server, quit just exits the current command processing
+                // but keeps the server running
+                continue;
+            }
+        }
+        
+        // Check if there's a new client connection
+        if (FD_ISSET(server_fd, &readfds)) {
+            struct sockaddr_in client_addr;
+            socklen_t client_len = sizeof(client_addr);
+            
+            int client_socket = accept(server_fd, (struct sockaddr *)&client_addr, &client_len);
+            if (client_socket < 0) {
+                perror("accept failed");
+                continue;
+            }
+            
+            if (verbose) {
+                char client_ip[INET_ADDRSTRLEN];
+                inet_ntop(AF_INET, &client_addr.sin_addr, client_ip, INET_ADDRSTRLEN);
+                printf("Client connected from %s:%d\n", client_ip, ntohs(client_addr.sin_port));
+            }
+            
+            // Allocate memory for client socket
+            int *pclient = malloc(sizeof(int));
+            if (pclient == NULL) {
+                perror("malloc failed");
+                close(client_socket);
+                continue;
+            }
+            
+            *pclient = client_socket;
+            
+            // Add client to queue for thread pool
+            pthread_mutex_lock(&queue_mutex);
+            enqueue(pclient);
+            pthread_cond_signal(&queue_cond_var);
+            pthread_mutex_unlock(&queue_mutex);
+        }
+    }
+    
+    // Clean up and wait for threads to finish
+    for (int i = 0; i < THREAD_POOL_SIZE; i++) {
+        pthread_cond_broadcast(&queue_cond_var);
+    }
+    
+    for (int i = 0; i < THREAD_POOL_SIZE; i++) {
+        pthread_join(thread_pool[i], NULL);
+    }
+    
+    // Close server socket
+    close(server_fd);
+    
+    if (verbose) {
+        printf("Server shut down successfully\n");
+    }
+    
+    return 0;
+}
+
+// Client function
+int run_client(const char *port_str, const char *socket_path, const char *ip_address, bool verbose) {
+    struct termios oldattr;
+    tcgetattr(STDIN_FILENO, &oldattr);
+    struct termios newattr = oldattr;
+    newattr.c_lflag &= ~(ICANON | ECHO);
+    tcsetattr(STDIN_FILENO, TCSANOW, &newattr);
+    
+    int sock = 0;
+    struct sockaddr_in serv_addr;
+    char buffer[BUFFER_SIZE] = {0};
+    
+    // Default values
+    const char *server_addr = ip_address ? ip_address : "127.0.0.1";
+    int port = port_str ? atoi(port_str) : SERVER_PORT;
+    
+    // Create socket
+    if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
+        perror("Socket creation error");
+        tcsetattr(STDIN_FILENO, TCSANOW, &oldattr); // Restore terminal
+        return -1;
+    }
+    
+    serv_addr.sin_family = AF_INET;
+    serv_addr.sin_port = htons(port);
+    
+    // Convert IPv4 and IPv6 addresses from text to binary form
+    if (inet_pton(AF_INET, server_addr, &serv_addr.sin_addr) <= 0) {
+        perror("Invalid address/ Address not supported");
+        close(sock);
+        tcsetattr(STDIN_FILENO, TCSANOW, &oldattr); // Restore terminal
+        return -1;
+    }
+    
+    // Connect to server
+    if (connect(sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
+        perror("Connection Failed");
+        close(sock);
+        tcsetattr(STDIN_FILENO, TCSANOW, &oldattr); // Restore terminal
+        return -1;
+    }
+    
+    if (verbose) {
+        printf("Connected to server at %s:%d\n", server_addr, port);
+    }
+    
+    fd_set readfds;
+    char current_cmd[BUFFER_SIZE] = {0};
+    int cursor_pos = 0;
+    
+    while (1) {
+        FD_ZERO(&readfds);
+        FD_SET(STDIN_FILENO, &readfds);
+        FD_SET(sock, &readfds);
+        
+        int max_fd = (STDIN_FILENO > sock) ? STDIN_FILENO : sock;
+        
+        // Wait for activity on stdin or socket
+        int activity = select(max_fd + 1, &readfds, NULL, NULL, NULL);
+        
+        if (activity < 0) {
+            if (errno == EINTR) continue;
+            perror("select failed");
+            break;
+        }
+        
+        // Check if server has sent data
+        if (FD_ISSET(sock, &readfds)) {
+            memset(buffer, 0, sizeof(buffer));
+            int bytes_read = read(sock, buffer, sizeof(buffer) - 1);
+            
+            if (bytes_read <= 0) {
+                if (verbose) {
+                    printf("Server disconnected\n");
+                }
+                break;
+            }
+            
+            buffer[bytes_read] = '\0'; // Ensure null termination
+            
+            // Print server response
+            printf("%s", buffer);
+            fflush(stdout);
+        }
+        
+        // Check if user has entered data
+        if (FD_ISSET(STDIN_FILENO, &readfds)) {
+            char ch;
+            if (read(STDIN_FILENO, &ch, 1) > 0) {
+                if (ch == '\n') {
+                    // Send the command to the server
+                    current_cmd[cursor_pos] = '\n';
+                    write(sock, current_cmd, cursor_pos + 1);
+                    
+                    // Check for quit command
+                    if (strncmp(current_cmd, "quit", 4) == 0) {
+                        if (verbose) {
+                            printf("Quitting client...\n");
+                        }
+                        break;
+                    }
+                    
+                    // Reset command buffer
+                    memset(current_cmd, 0, sizeof(current_cmd));
+                    cursor_pos = 0;
+                } else if (ch == 127 || ch == '\b') { // Backspace
+                    if (cursor_pos > 0) {
+                        cursor_pos--;
+                        current_cmd[cursor_pos] = '\0';
+                        printf("\b \b"); // Erase character from terminal
+                        fflush(stdout);
+                    }
+                } else if (isprint(ch)) {
+                    // Add character to command
+                    if (cursor_pos < BUFFER_SIZE - 2) { // Leave room for \n\0
+                        current_cmd[cursor_pos++] = ch;
+                        printf("%c", ch); // Echo character
+                        fflush(stdout);
+                    }
+                }
+            }
+        }
+    }
+
+    // Restore terminal settings
+    tcsetattr(STDIN_FILENO, TCSANOW, &oldattr);
+    
+    close(sock);
+    return 0;
+}
+
+// Main function
 int main(int argc, char **argv) 
 {
-	int c;
-	int index;
-	char * p_value = NULL;
-	char * u_value = NULL;
-	char * l_value = NULL;
-	char * i_value = NULL;
-	bool c_flag, s_flag, v_flag;
-	c_flag = s_flag = v_flag = false;
+    int c;
+    int index;
+    char *p_value = NULL;
+    char *u_value = NULL;
+    char *l_value = NULL;
+    char *i_value = NULL;
+    bool c_flag, s_flag, v_flag;
+    c_flag = s_flag = v_flag = false;
 
-	for (index = 1; index < argc; index++) {
-		if (strcmp(argv[index], "-halt") == 0) {
-			printf("Halting the server...\n");
-			// Add halt logic here
-			return 0;
-		}
-		else if (strcmp(argv[index], "-quit") == 0) {
-			printf("Quitting the shell...\n");
-			return 0;
-		} 
-		else if (strcmp(argv[index], "-help") == 0) {
-			help();
-			return 0;
-		}
-	}
+    // Check for standalone -help, -halt, -quit options
+    for (index = 1; index < argc; index++) {
+        if (strcmp(argv[index], "-halt") == 0) {
+            printf("Halting the server...\n");
+            return 0;
+        }
+        else if (strcmp(argv[index], "-quit") == 0) {
+            printf("Quitting the shell...\n");
+            return 0;
+        } 
+        else if (strcmp(argv[index], "-help") == 0) {
+            help();
+            return 0;
+        }
+    }
 
-	static struct option long_options[] = {
-		{"help", no_argument, 0, 'h'},
-		{"port", required_argument, 0, 'p'},
-		{"socket", required_argument, 0, 'u'},
-		{"client", no_argument, 0, 'c'},
-		{"server", no_argument, 0, 's'},
-		{"ip", required_argument, 0, 'i'},
-		{"verbose", no_argument, 0, 'v'},
-		{"log", required_argument, 0, 'l'},
-		{"quit", no_argument, 0, 'q'},
-		{"halt", no_argument, 0, 'x'},
-		{0, 0, 0, 0}
-	};
+    static struct option long_options[] = {
+        {"help", no_argument, 0, 'h'},
+        {"port", required_argument, 0, 'p'},
+        {"socket", required_argument, 0, 'u'},
+        {"client", no_argument, 0, 'c'},
+        {"server", no_argument, 0, 's'},
+        {"ip", required_argument, 0, 'i'},
+        {"verbose", no_argument, 0, 'v'},
+        {"log", required_argument, 0, 'l'},
+        {"quit", no_argument, 0, 'q'},
+        {"halt", no_argument, 0, 'x'},
+        {0, 0, 0, 0}
+    };
 
-	int option_index = 0;
-	
-	opterr = 0;
+    int option_index = 0;
+    
+    opterr = 0;
   
-	while ((c = getopt_long(argc, argv, "hcsvp:u:i:l:qx", long_options, &option_index)) != -1)
-	{
-	  switch (c)
-		{
-		case 'h':
-			help();
-			return 0;
-		case 'q':  // quit command
-			printf("Quitting the shell...\n");
-			return 0;
-		case 'x':  // halt command
-			printf("Halting the server...\n");
-			return 0;
-		case 'p':
-			// set port
-			printf("%c\n", c);
-			p_value = optarg;
-			if (p_value != NULL)
-			{
-				printf("Port: %s\n", p_value);
-			}
-			else
-			{
-				printf("Port not set\n");
-			}
-			break;
-		case 'u':
-			// set socket
-			printf("%c\n", c);
-			u_value = optarg;
-			if (u_value != NULL)
-			{
-				printf("Socket: %s\n", u_value);
-			}
-			else
-			{
-				printf("Socket not set\n");
-			}
-			break;
-		case 'c':
-			// run as client
-			printf("%c\n", c);
-			c_flag = true;
-			break;
-		case 's':
-			// run as server
-			printf("%c\n", c);
-			s_flag = true;
-			break;
-		case 'i':
-			// set IP
-			printf("%c\n", c);
-			i_value = optarg;
-			if (i_value != NULL)
-			{
-				printf("IP: %s\n", i_value);
-			}
-			else
-			{
-				printf("IP not set\n");
-			}
-			break;
-		case 'v':
-			// verbose output (show debug info)
-			printf("%c\n", c);
-			v_flag = true;
-			break;
-		case 'l':
-			// write logs to a file
-			printf("%c\n", c);
-			l_value = optarg;
-			if (l_value != NULL)
-			{
-				printf("Log file: %s\n", l_value);
-			}
-			else
-			{
-				printf("Log file not set\n");
-			}
-			break;
-		case '?':
-			if (optopt == 'p' || optopt == 'u' || optopt == 'l' || optopt == 'i')
-			{
-				fprintf (stderr, "Option -%c requires an argument.\n", optopt);
-			}
-			else if (isprint (optopt))
-			{
-				fprintf (stderr, "Unknown option `-%c'.\n", optopt);
-			}
-			else
-			{
-				fprintf (stderr, "Unknown option character `%x'.\n", optopt);
-			}
+    while ((c = getopt_long(argc, argv, "hcsvp:u:i:l:qx", long_options, &option_index)) != -1)
+    {
+        switch (c)
+        {
+        case 'h':
+            help();
+            return 0;
+        case 'q':  // quit command
+            printf("Quitting the shell...\n");
+            return 0;
+        case 'x':  // halt command
+            printf("Halting the server...\n");
+            return 0;
+        case 'p':
+            // set port
+            p_value = optarg;
+            if (optarg != NULL && v_flag) {
+                printf("Port: %s\n", p_value);
+            }
+            break;
+        case 'u':
+            // set socket
+            u_value = optarg;
+            if (optarg != NULL && v_flag) {
+                printf("Socket: %s\n", u_value);
+            }
+            break;
+        case 'c':
+            // run as client
+            c_flag = true;
+            if (v_flag) {
+                printf("Running as client\n");
+            }
+            break;
+        case 's':
+            // run as server
+            s_flag = true;
+            if (v_flag) {
+                printf("Running as server\n");
+            }
+            break;
+        case 'i':
+            // set IP
+            i_value = optarg;
+            if (optarg != NULL && v_flag) {
+                printf("IP: %s\n", i_value);
+            }
+            break;
+        case 'v':
+            // verbose output (show debug info)
+            v_flag = true;
+            printf("Verbose mode enabled\n");
+            break;
+        case 'l':
+            // write logs to a file
+            l_value = optarg;
+            if (optarg != NULL && v_flag) {
+                printf("Log file: %s\n", l_value);
+            }
+            break;
+        case '?':
+            if (optopt == 'p' || optopt == 'u' || optopt == 'l' || optopt == 'i')
+            {
+                fprintf(stderr, "Option -%c requires an argument.\n", optopt);
+            }
+            else if (isprint(optopt))
+            {
+                fprintf(stderr, "Unknown option `-%c'.\n", optopt);
+            }
+            else
+            {
+                fprintf(stderr, "Unknown option character `\\x%x'.\n", optopt);
+            }
 
-			return 1;
-		default:
-			abort ();
-		}
-	}
+            return 1;
+        default:
+            abort();
+        }
+    }
 
-	// check if c_flag and s_flag are set at the same time
-	if (c_flag && s_flag)
-	{
-		fprintf(stderr, "Error: Cannot run as client and server at the same time\n");
-		return 1;
-	}
-  
-	// Check for any unknown arguments
-	if (optind < argc) {
-		printf("Unknown arguments:");
-		for (index = optind; index < argc; index++) {
-			printf(" %s", argv[index]);
-		}
-		printf("\n");
-		return 1;
-	}
+    // Check for any unknown arguments
+    if (optind < argc) {
+        printf("Unknown arguments:");
+        for (index = optind; index < argc; index++) {
+            printf(" %s", argv[index]);
+        }
+        printf("\n");
+        return 1;
+    }
 
+    // Check if c_flag and s_flag are set at the same time
+    if (c_flag && s_flag)
+    {
+        fprintf(stderr, "Error: Cannot run as client and server at the same time\n");
+        return 1;
+    }
 
-	return 0;
-  }
+    // Run in the appropriate mode
+    if (c_flag) {
+        // Run as client
+        return run_client(p_value, u_value, i_value, v_flag);
+    } else {
+        // Run as server (default if no mode specified)
+        return run_server(p_value, u_value, v_flag, l_value);
+    }
+}
