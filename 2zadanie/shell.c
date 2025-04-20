@@ -455,11 +455,11 @@ int run_unified_server(const char *port_str, const char *socket_path, bool verbo
 	// Initialize server_running flag
 	server_running = 1;
 	
-	// Create TCP socket if port is specified
-	if (port_str != NULL) {
+	// Create TCP socket if port is specified or if no socket path is provided
+	if (port_str != NULL || socket_path == NULL || strlen(socket_path) == 0) {
 		if ((tcp_server_fd = socket(AF_INET, SOCK_STREAM, 0)) == 0) {
 			perror("TCP socket creation failed");
-			// Continue with unix socket if that's available
+			// Continue with Unix socket if that's available
 		} else {
 			// Set socket options
 			if (setsockopt(tcp_server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt))) {
@@ -598,16 +598,20 @@ int run_unified_server(const char *port_str, const char *socket_path, bool verbo
 				command[len-1] = '\0';
 			}
 			
+			int tmp_prompt;
 			// Process command only if non-empty
 			if (strlen(command) > 0) {
 				// Execute command
 				int result = execute_command(command, false, -1);
+				tmp_prompt = result; // Store result for prompt display
 				if (result == -1 || result == -2) { // halt or quit command on server kills the server
 					server_running = 0;
 				}
 			}
-
-			prompt();
+			
+			if (tmp_prompt != -1 && tmp_prompt != -2) {
+				prompt();
+			}
 		}
 		
 		// Check for client connections on TCP socket
@@ -727,7 +731,8 @@ int run_unified_client(const char *port_str, const char *socket_path, const char
 		// Create Unix socket
 		if ((sock = socket(AF_UNIX, SOCK_STREAM, 0)) < 0) {
 			perror("Unix socket creation error");
-			// Fall back to TCP socket
+			tcsetattr(STDIN_FILENO, TCSANOW, &oldattr); // Restore terminal
+			return -1; // Don't fall back to TCP if Unix socket was explicitly requested
 		} else {
 			// Set up Unix address
 			memset(&address, 0, sizeof(struct sockaddr_un));
@@ -738,15 +743,15 @@ int run_unified_client(const char *port_str, const char *socket_path, const char
 			if (connect(sock, (struct sockaddr*)&address, sizeof(struct sockaddr_un)) < 0) {
 				perror("Unix socket connection failed");
 				close(sock);
-				sock = -1;
-				// Fall back to TCP socket
+				tcsetattr(STDIN_FILENO, TCSANOW, &oldattr); // Restore terminal
+				return -1; // Don't fall back to TCP if Unix socket was explicitly requested
 			} else if (verbose) {
 				printf("Connected to server via Unix socket: %s\n", socket_path);
 			}
 		}
 	}
 	
-	// If Unix socket connection failed or wasn't specified, try TCP
+	// If Unix socket connection wasn't specified, try TCP
 	if (sock < 0) {
 		struct sockaddr_in serv_addr;
 		
