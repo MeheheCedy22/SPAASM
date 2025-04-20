@@ -15,6 +15,7 @@
 !2zadanie/*.h
 !2zadanie/Makefile
 !2zadanie/start_tmux.sh
+2zadanie/stash*
 
 # zadanie3
 
