@@ -1,4 +1,6 @@
-// Author: Name Surname
+// Autor: Marek Čederle
+// Zadanie:
+
 /* MANDATORY TASKS */
 /*
 - [x] -help ; -halt ; -quit program arguments
@@ -22,6 +24,10 @@
 - [x] 21. (2 body) functional Makefile
 - [x] 23. (1 bod) good comments in english
 */
+
+// Termín odovzdávania: 20.04.2025 23:59
+// Ročník, ak. rok, semester, odbor: tretí, 2024/2025, letný, informatika
+// Riešenie:
 
 /* SOURCES */
 /*
@@ -47,10 +53,6 @@
 - In some parts of the program, AI (LLM) is a co-author
 
 */
-
-// Termín odovzdávania: 20.04.2025 23:59
-// Ročník, ak. rok, semester, odbor: tretí, 2024/2025, letný, informatika
-// Riešenie:
 
 #include <ctype.h>
 #include <stdio.h>
@@ -82,7 +84,7 @@
 
 #define DEFAULT_IP_ADDRESS "127.0.0.1"
 #define DEFAULT_SERVER_PORT 60069
-#define BUFFER_SIZE 1024 // size of buffer for client command send to server
+#define BUFFER_SIZE 1024
 #define SERVER_BACKLOG 5 // max number of pending connections
 #define THREAD_POOL_SIZE 10
 #define MAX_HOSTNAME_LENGTH 256
@@ -150,7 +152,7 @@ void sigchld_handler(int s)
 	while (waitpid(-1, NULL, WNOHANG) > 0)
 	{
 		// do nothing, just collect	 the dead processes
-	};
+	}
 
 	// re-establish the signal handler
 	signal(SIGCHLD, sigchld_handler);
@@ -178,7 +180,7 @@ void setup_signal_handlers()
 // help command implementation
 void help()
 {
-	printf("Author: Name Surname\n");
+	printf("Author: Marek Cederle\n");
 	printf("About: Simple interactive shell written in C using client-server architecture.\n");
 	printf("Usage: ./shell [OPTIONS]\n");
 	printf("Options:\n");
@@ -421,9 +423,11 @@ void handle_client(int client_socket)
 		bytes_read = recv(client_socket, buffer, BUFFER_SIZE - 1, 0);
 		if (bytes_read <= 0)
 		{
-			break; // client disconnected or error
+			// client disconnected or error
+			break;
 		}
 
+		// null-terminate the received command
 		buffer[bytes_read] = '\0';
 
 		// remove newline character if present
@@ -441,8 +445,8 @@ void handle_client(int client_socket)
 		// process the command
 		if (strncmp(buffer, "quit", 4) == 0)
 		{
-			const char *goodbye = "Disconnecting from server. Goodbye!\n";
-			send(client_socket, goodbye, strlen(goodbye), 0);
+			const char *goodbye_msg = "Disconnecting from server!\n";
+			send(client_socket, goodbye_msg, strlen(goodbye_msg), 0);
 			break;
 		}
 
@@ -476,14 +480,13 @@ void handle_client(int client_socket)
 			continue;
 		}
 
-		// handle line continuation character (\) - collect additional input lines
+		// handle line continuation character `\` - collect additional input lines
 		bool continuation = false;
 		if (strlen(cmd_copy) > 0 && cmd_copy[strlen(cmd_copy) - 1] == '\\')
 		{
 			// remove the continuation character
 			cmd_copy[strlen(cmd_copy) - 1] = '\0';
 
-			// flag that we need to continue reading
 			continuation = true;
 
 			// send a continuation prompt to the client
@@ -497,7 +500,8 @@ void handle_client(int client_socket)
 				bytes_read = recv(client_socket, cont_buffer, BUFFER_SIZE - 1, 0);
 				if (bytes_read <= 0)
 				{
-					break; // client disconnected or error
+					// client disconnected or error
+					break;
 				}
 
 				cont_buffer[bytes_read] = '\0';
@@ -637,7 +641,7 @@ void handle_client(int client_socket)
 
 		while ((line_length = getline(&output_line, &line_buf_size, pipe_stream)) != -1)
 		{
-			// allocate/reallocate combined output buffer
+			// allocate / reallocate combined output buffer
 			char *new_complete = realloc(complete_output, total_size + line_length + 1);
 			if (!new_complete)
 			{
@@ -691,7 +695,7 @@ int run_unified_server(const char *port_str, const char *socket_path, const char
 		if (!log_file_ptr)
 		{
 			perror("Failed to open log file");
-			// continue without logging
+			perror("Continue without logging...");
 		}
 		else
 		{
@@ -720,7 +724,7 @@ int run_unified_server(const char *port_str, const char *socket_path, const char
 		if ((tcp_server_fd = socket(AF_INET, SOCK_STREAM, 0)) == 0)
 		{
 			perror("TCP socket creation failed");
-			// continue with unix socket if that's available
+			// continue with unix socket if that's available (later in code)
 		}
 		else
 		{
@@ -845,13 +849,12 @@ int run_unified_server(const char *port_str, const char *socket_path, const char
 		return -1;
 	}
 
-	// initialize the thread pool
+	// initialize the thread pool for worker threads
 	for (int i = 0; i < THREAD_POOL_SIZE; i++)
 	{
 		if (pthread_create(&thread_pool[i], NULL, thread_function, NULL) != 0)
 		{
 			perror("Failed to create thread");
-			// continue with fewer threads
 		}
 	}
 
@@ -914,6 +917,7 @@ int run_unified_server(const char *port_str, const char *socket_path, const char
 
 			if (verbose)
 			{
+				// get client IP address and port info for logging
 				char client_ip[INET_ADDRSTRLEN];
 				inet_ntop(AF_INET, &client_addr.sin_addr, client_ip, INET_ADDRSTRLEN);
 				printf("Client connected from %s:%d\n", client_ip, ntohs(client_addr.sin_port));
@@ -985,8 +989,10 @@ int run_unified_server(const char *port_str, const char *socket_path, const char
 		// check if there's input from stdin
 		if (FD_ISSET(STDIN_FILENO, &readfds))
 		{
-			char command[BUFFER_SIZE];
-			static char full_command[BUFFER_SIZE * 4] = {0}; // larger buffer for multi-line commands
+			// larger buffer for multi-line commands
+			char command[BUFFER_SIZE * 4] = {0};
+			static char full_command[BUFFER_SIZE * 4] = {0};
+
 			static bool in_continuation = false;
 
 			// read command
@@ -1083,7 +1089,8 @@ int run_unified_server(const char *port_str, const char *socket_path, const char
 				// redirect stdout and stderr to the pipe
 				dup2(pipes[1], STDOUT_FILENO);
 				dup2(pipes[1], STDERR_FILENO);
-				close(pipes[1]); // close write end of pipe
+				// close write end of pipe
+				close(pipes[1]);
 
 				// create a copy of the command for processing
 				char *cmd_copy = strdup(command);
@@ -1188,7 +1195,7 @@ int run_unified_server(const char *port_str, const char *socket_path, const char
 
 				while ((line_length = getline(&output_line, &line_buf_size, pipe_stream)) != -1)
 				{
-					// allocate/reallocate combined output buffer
+					// allocate / reallocate combined output buffer
 					char *new_complete = realloc(complete_output, total_size + line_length + 1);
 					if (!new_complete)
 					{
