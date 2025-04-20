@@ -21,6 +21,7 @@
 #include <netdb.h>
 #include <termios.h>
 #include <sys/ioctl.h>
+#include <sys/un.h>
 #include "custom_queue.h"
 
 /* THESE ARE THE MAIN TASKS WHICH ARE MANDATORY */
@@ -40,8 +41,22 @@
 /* VOLUNTARY TASKS*/
 /*
 - [x] option to specify -i ip address as program argument
+- [x] use of external custom library
 - [x] option to specify -v verbose output as program argument
 - [x] option to specify -l for log file as program argument
+- [x] functional Makefile
+- [ ] good comments in english
+*/
+
+
+/* VOLUNTARY TASKS GRADING */
+/*
+	7. (2 body)
+	11. (2 body)
+	14. (1 bod)
+	18. (2 body)
+	21. (2 body)
+	23. (1 bod)
 */
 
 #define SERVER_PORT 60069
@@ -61,8 +76,13 @@ pthread_cond_t queue_cond_var = PTHREAD_COND_INITIALIZER;
 // Function prototypes
 void help();
 void prompt();
-int run_server(const char *port_str, const char *socket_path, bool verbose, const char *log_file);
-int run_client(const char *port_str, const char *socket_path, const char *ip_address, bool verbose);
+// int run_server(const char *port_str, const char *socket_path, bool verbose, const char *log_file);
+// int run_client(const char *port_str, const char *socket_path, const char *ip_address, bool verbose);
+// int run_unix_server(const char *socket_path, bool verbose, const char *log_file);
+// int run_unix_client(const char *socket_path, bool verbose);
+int run_unified_server(const char *port_str, const char *socket_path, bool verbose, const char *log_file);
+int run_unified_client(const char *port_str, const char *socket_path, const char *ip_address, bool verbose);
+
 int execute_command(char *command, bool redirect_output, int output_fd);
 void handle_client(int client_socket);
 void sigchld_handler(int s);
@@ -423,49 +443,90 @@ void handle_client(int client_socket) {
 	}
 }
 
-// Server function
-int run_server(const char *port_str, const char *socket_path, bool verbose, const char *log_file) {
-	int server_fd;
-	struct sockaddr_in address;
+// Combined server function that handles both TCP and Unix domain sockets
+int run_unified_server(const char *port_str, const char *socket_path, bool verbose, const char *log_file) {
+	int tcp_server_fd = -1;
+	int unix_server_fd = -1;
+	struct sockaddr_in tcp_address;
+	struct sockaddr_un unix_address;
 	int opt = 1;
 	int port = port_str ? atoi(port_str) : SERVER_PORT;
 	
 	// Initialize server_running flag
 	server_running = 1;
 	
-	// Create socket file descriptor
-	if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) == 0) {
-		perror("socket failed");
-		return -1;
+	// Create TCP socket if port is specified
+	if (port_str != NULL) {
+		if ((tcp_server_fd = socket(AF_INET, SOCK_STREAM, 0)) == 0) {
+			perror("TCP socket creation failed");
+			// Continue with unix socket if that's available
+		} else {
+			// Set socket options
+			if (setsockopt(tcp_server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt))) {
+				perror("setsockopt failed for TCP socket");
+				close(tcp_server_fd);
+				tcp_server_fd = -1;
+			} else {
+				// Set up TCP address
+				tcp_address.sin_family = AF_INET;
+				tcp_address.sin_addr.s_addr = INADDR_ANY;
+				tcp_address.sin_port = htons(port);
+				
+				// Bind the TCP socket to the port
+				if (bind(tcp_server_fd, (struct sockaddr *)&tcp_address, sizeof(tcp_address)) < 0) {
+					perror("TCP socket bind failed");
+					close(tcp_server_fd);
+					tcp_server_fd = -1;
+				} else {
+					// Listen on TCP socket
+					if (listen(tcp_server_fd, SERVER_BACKLOG) < 0) {
+						perror("TCP socket listen failed");
+						close(tcp_server_fd);
+						tcp_server_fd = -1;
+					} else if (verbose) {
+						printf("Server listening on TCP port %d\n", port);
+					}
+				}
+			}
+		}
 	}
 	
-	// Set socket options
-	if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt))) {
-		perror("setsockopt failed");
-		close(server_fd);
-		return -1;
+	// Create Unix domain socket if socket path is specified
+	if (socket_path != NULL && strlen(socket_path) > 0) {
+		if ((unix_server_fd = socket(AF_UNIX, SOCK_STREAM, 0)) < 0) {
+			perror("Unix socket creation failed");
+			// Continue with TCP socket if that's available
+		} else {
+			// Remove existing socket file if it exists
+			unlink(socket_path);
+			
+			// Set up Unix address
+			memset(&unix_address, 0, sizeof(struct sockaddr_un));
+			unix_address.sun_family = AF_UNIX;
+			strncpy(unix_address.sun_path, socket_path, sizeof(unix_address.sun_path) - 1);
+			
+			// Bind Unix socket
+			if (bind(unix_server_fd, (struct sockaddr*)&unix_address, sizeof(struct sockaddr_un)) < 0) {
+				perror("Unix socket bind failed");
+				close(unix_server_fd);
+				unix_server_fd = -1;
+			} else {
+				// Listen on Unix socket
+				if (listen(unix_server_fd, SERVER_BACKLOG) < 0) {
+					perror("Unix socket listen failed");
+					close(unix_server_fd);
+					unix_server_fd = -1;
+				} else if (verbose) {
+					printf("Server listening on Unix socket: %s\n", socket_path);
+				}
+			}
+		}
 	}
 	
-	address.sin_family = AF_INET;
-	address.sin_addr.s_addr = INADDR_ANY;
-	address.sin_port = htons(port);
-	
-	// Bind the socket to the port
-	if (bind(server_fd, (struct sockaddr *)&address, sizeof(address)) < 0) {
-		perror("bind failed");
-		close(server_fd);
+	// Check if at least one socket was created successfully
+	if (tcp_server_fd < 0 && unix_server_fd < 0) {
+		fprintf(stderr, "Failed to create any server socket\n");
 		return -1;
-	}
-	
-	// Listen for connections
-	if (listen(server_fd, SERVER_BACKLOG) < 0) {
-		perror("listen failed");
-		close(server_fd);
-		return -1;
-	}
-	
-	if (verbose) {
-		printf("Server started on port %d\n", port);
 	}
 	
 	// Set up signal handlers
@@ -479,19 +540,30 @@ int run_server(const char *port_str, const char *socket_path, bool verbose, cons
 		}
 	}
 	
-	// Set up for select() to monitor both standard input and socket
+	// Set up for select() to monitor standard input and both sockets
 	fd_set readfds;
 	int max_fd;
+
+	// Show prompt BEFORE waiting for input
+	prompt();
 	
 	// Main server loop
 	while (server_running) {
 		FD_ZERO(&readfds);
 		FD_SET(STDIN_FILENO, &readfds);
-		FD_SET(server_fd, &readfds);
 		
-		max_fd = (STDIN_FILENO > server_fd) ? STDIN_FILENO : server_fd;
+		// Add active sockets to the fd set
+		max_fd = STDIN_FILENO;
+		if (tcp_server_fd >= 0) {
+			FD_SET(tcp_server_fd, &readfds);
+			if (tcp_server_fd > max_fd) max_fd = tcp_server_fd;
+		}
+		if (unix_server_fd >= 0) {
+			FD_SET(unix_server_fd, &readfds);
+			if (unix_server_fd > max_fd) max_fd = unix_server_fd;
+		}
 		
-		// Wait for activity on stdin or server socket with timeout
+		// Wait for activity with timeout
 		struct timeval tv = {1, 0}; // 1 second timeout
 		int activity = select(max_fd + 1, &readfds, NULL, NULL, &tv);
 		
@@ -507,9 +579,6 @@ int run_server(const char *port_str, const char *socket_path, bool verbose, cons
 		// Check if there's input from stdin
 		if (FD_ISSET(STDIN_FILENO, &readfds)) {
 			char command[BUFFER_SIZE];
-			
-			// Show prompt BEFORE waiting for input
-			prompt();
 			
 			// Read command
 			if (fgets(command, sizeof(command), stdin) == NULL) {
@@ -533,25 +602,22 @@ int run_server(const char *port_str, const char *socket_path, bool verbose, cons
 			if (strlen(command) > 0) {
 				// Execute command
 				int result = execute_command(command, false, -1);
-				if (result == -1) { // halt command
+				if (result == -1 || result == -2) { // halt or quit command on server kills the server
 					server_running = 0;
-				} else if (result == -2) { // quit command
-					// For server, quit just exits the current command processing
-					// but keeps the server running
-					continue;
 				}
-				printf("\n"); // Add newline after command output
 			}
+
+			prompt();
 		}
 		
-		// Check if there's a new client connection
-		if (FD_ISSET(server_fd, &readfds)) {
+		// Check for client connections on TCP socket
+		if (tcp_server_fd >= 0 && FD_ISSET(tcp_server_fd, &readfds)) {
 			struct sockaddr_in client_addr;
 			socklen_t client_len = sizeof(client_addr);
 			
-			int client_socket = accept(server_fd, (struct sockaddr *)&client_addr, &client_len);
+			int client_socket = accept(tcp_server_fd, (struct sockaddr *)&client_addr, &client_len);
 			if (client_socket < 0) {
-				perror("accept failed");
+				perror("TCP accept failed");
 				continue;
 			}
 			
@@ -559,6 +625,38 @@ int run_server(const char *port_str, const char *socket_path, bool verbose, cons
 				char client_ip[INET_ADDRSTRLEN];
 				inet_ntop(AF_INET, &client_addr.sin_addr, client_ip, INET_ADDRSTRLEN);
 				printf("Client connected from %s:%d\n", client_ip, ntohs(client_addr.sin_port));
+			}
+			
+			// Allocate memory for client socket
+			int *pclient = malloc(sizeof(int));
+			if (pclient == NULL) {
+				perror("malloc failed");
+				close(client_socket);
+				continue;
+			}
+			
+			*pclient = client_socket;
+			
+			// Add client to queue for thread pool
+			pthread_mutex_lock(&queue_mutex);
+			enqueue(pclient);
+			pthread_cond_signal(&queue_cond_var);
+			pthread_mutex_unlock(&queue_mutex);
+		}
+		
+		// Check for client connections on Unix socket
+		if (unix_server_fd >= 0 && FD_ISSET(unix_server_fd, &readfds)) {
+			struct sockaddr_un client_addr;
+			socklen_t client_len = sizeof(client_addr);
+			
+			int client_socket = accept(unix_server_fd, (struct sockaddr *)&client_addr, &client_len);
+			if (client_socket < 0) {
+				perror("Unix accept failed");
+				continue;
+			}
+			
+			if (verbose) {
+				printf("Client connected on Unix socket\n");
 			}
 			
 			// Allocate memory for client socket
@@ -596,8 +694,12 @@ int run_server(const char *port_str, const char *socket_path, bool verbose, cons
 		}
 	}
 	
-	// Close server socket
-	close(server_fd);
+	// Close sockets
+	if (tcp_server_fd >= 0) close(tcp_server_fd);
+	if (unix_server_fd >= 0) {
+		close(unix_server_fd);
+		unlink(socket_path); // Remove Unix socket file
+	}
 	
 	if (verbose) {
 		printf("Server shut down successfully\n");
@@ -606,56 +708,88 @@ int run_server(const char *port_str, const char *socket_path, bool verbose, cons
 	return 0;
 }
 
-// Client function
-int run_client(const char *port_str, const char *socket_path, const char *ip_address, bool verbose) {
+// Unified client function
+int run_unified_client(const char *port_str, const char *socket_path, const char *ip_address, bool verbose) {
+	int sock = -1;
+	char buffer[BUFFER_SIZE] = {0};
+	
+	// Set terminal to raw mode
 	struct termios oldattr;
 	tcgetattr(STDIN_FILENO, &oldattr);
 	struct termios newattr = oldattr;
 	newattr.c_lflag &= ~(ICANON | ECHO);
 	tcsetattr(STDIN_FILENO, TCSANOW, &newattr);
 	
-	int sock = 0;
-	struct sockaddr_in serv_addr;
-	char buffer[BUFFER_SIZE] = {0};
-	
-	// Default values
-	const char *server_addr = ip_address ? ip_address : "127.0.0.1";
-	int port = port_str ? atoi(port_str) : SERVER_PORT;
-	
-	// Create socket
-	if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
-		perror("Socket creation error");
-		tcsetattr(STDIN_FILENO, TCSANOW, &oldattr); // Restore terminal
-		return -1;
+	// Try to connect using Unix socket if specified
+	if (socket_path != NULL && strlen(socket_path) > 0) {
+		struct sockaddr_un address;
+		
+		// Create Unix socket
+		if ((sock = socket(AF_UNIX, SOCK_STREAM, 0)) < 0) {
+			perror("Unix socket creation error");
+			// Fall back to TCP socket
+		} else {
+			// Set up Unix address
+			memset(&address, 0, sizeof(struct sockaddr_un));
+			address.sun_family = AF_UNIX;
+			strncpy(address.sun_path, socket_path, sizeof(address.sun_path) - 1);
+			
+			// Connect to server
+			if (connect(sock, (struct sockaddr*)&address, sizeof(struct sockaddr_un)) < 0) {
+				perror("Unix socket connection failed");
+				close(sock);
+				sock = -1;
+				// Fall back to TCP socket
+			} else if (verbose) {
+				printf("Connected to server via Unix socket: %s\n", socket_path);
+			}
+		}
 	}
 	
-	serv_addr.sin_family = AF_INET;
-	serv_addr.sin_port = htons(port);
-	
-	// Convert IPv4 and IPv6 addresses from text to binary form
-	if (inet_pton(AF_INET, server_addr, &serv_addr.sin_addr) <= 0) {
-		perror("Invalid address/ Address not supported");
-		close(sock);
-		tcsetattr(STDIN_FILENO, TCSANOW, &oldattr); // Restore terminal
-		return -1;
-	}
-	
-	// Connect to server
-	if (connect(sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
-		perror("Connection Failed");
-		close(sock);
-		tcsetattr(STDIN_FILENO, TCSANOW, &oldattr); // Restore terminal
-		return -1;
-	}
-	
-	if (verbose) {
-		printf("Connected to server at %s:%d\n", server_addr, port);
+	// If Unix socket connection failed or wasn't specified, try TCP
+	if (sock < 0) {
+		struct sockaddr_in serv_addr;
+		
+		// Default values
+		const char *server_addr = ip_address ? ip_address : "127.0.0.1";
+		int port = port_str ? atoi(port_str) : SERVER_PORT;
+		
+		// Create TCP socket
+		if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
+			perror("Socket creation error");
+			tcsetattr(STDIN_FILENO, TCSANOW, &oldattr); // Restore terminal
+			return -1;
+		}
+		
+		serv_addr.sin_family = AF_INET;
+		serv_addr.sin_port = htons(port);
+		
+		// Convert IPv4 address from text to binary form
+		if (inet_pton(AF_INET, server_addr, &serv_addr.sin_addr) <= 0) {
+			perror("Invalid address/ Address not supported");
+			close(sock);
+			tcsetattr(STDIN_FILENO, TCSANOW, &oldattr); // Restore terminal
+			return -1;
+		}
+		
+		// Connect to server
+		if (connect(sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
+			perror("Connection Failed");
+			close(sock);
+			tcsetattr(STDIN_FILENO, TCSANOW, &oldattr); // Restore terminal
+			return -1;
+		}
+		
+		if (verbose) {
+			printf("Connected to server at %s:%d\n", server_addr, port);
+		}
 	}
 	
 	fd_set readfds;
 	char current_cmd[BUFFER_SIZE] = {0};
 	int cursor_pos = 0;
 	
+	// Main client loop
 	while (1) {
 		FD_ZERO(&readfds);
 		FD_SET(STDIN_FILENO, &readfds);
@@ -896,9 +1030,9 @@ int main(int argc, char **argv)
 	// Run in the appropriate mode
 	if (c_flag) {
 		// Run as client
-		return run_client(p_value, u_value, i_value, v_flag);
+		return run_unified_client(p_value, u_value, i_value, v_flag);
 	} else {
 		// Run as server (default if no mode specified)
-		return run_server(p_value, u_value, v_flag, l_value);
+		return run_unified_server(p_value, u_value, v_flag, l_value);
 	}
 }
