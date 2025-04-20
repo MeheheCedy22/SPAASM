@@ -25,6 +25,31 @@
 #include <stdarg.h>
 #include "custom_queue.h"
 
+/* SOURCES */
+/*
+- Custom Shell
+	- https://brennan.io/2015/01/16/write-a-shell-in-c/
+
+- Getopts
+	- https://www.gnu.org/software/libc/manual/html_node/Example-of-Getopt.html
+	- https://www.gnu.org/software/libc/manual/html_node/Getopt-Long-Option-Example.html
+
+
+- https://www.youtube.com/@JacobSorber/videos
+	- Multithreading
+	- https://www.youtube.com/watch?v=Pg_4Jz8ZIH4
+	- https://www.youtube.com/watch?v=FMNnusHqjpw
+	- https://www.youtube.com/watch?v=P6Z5K8zmEmc
+	- Network programming
+	- https://www.youtube.com/watch?v=HpAdCgs9HCI
+	- https://www.youtube.com/watch?v=il4N6KjVQ-s
+	- https://www.youtube.com/watch?v=Y6pFtgRdUts
+
+- Prednasky z predmetu SPAASM
+- Niektore casti boli pisane s pomocou AI (LLMs)
+
+*/
+
 /* THESE ARE THE MAIN TASKS WHICH ARE MANDATORY */
 /* WHAT TO IMPLEMENT / TODOs / TASKS
 - [x] -help ; -halt ; -quit program arguments
@@ -317,7 +342,7 @@ int execute_command(char *command, bool redirect_output, int output_fd) {
 	}
 }
 
-// Client handling function
+// Client handling function with dynamic output buffer
 void handle_client(int client_socket) {
 	char buffer[BUFFER_SIZE];
 	ssize_t bytes_read;
@@ -530,36 +555,89 @@ void handle_client(int client_socket) {
 		close(stdout_backup);
 		close(stderr_backup);
 		
-		// Read command output from pipe
-		char output_buffer[BUFFER_SIZE] = {0};
-		ssize_t output_size = read(pipes[0], output_buffer, BUFFER_SIZE - 1);
-		close(pipes[0]);  // Close read end of pipe
+		// Read command output using dynamic buffer with getline
+		FILE *pipe_stream = fdopen(pipes[0], "r");
+		if (!pipe_stream) {
+			perror("Failed to create stream from pipe");
+			close(pipes[0]);
+			continue;
+		}
 		
-		if (output_size > 0) {
-			output_buffer[output_size] = '\0';
-			// Send output to client
-			send(client_socket, output_buffer, output_size, 0);
+		// Use dynamic buffer with getline to read all output
+		char *output_line = NULL;
+		size_t line_buf_size = 0;
+		ssize_t line_length;
+		char *complete_output = NULL;
+		size_t total_size = 0;
+		
+		while ((line_length = getline(&output_line, &line_buf_size, pipe_stream)) != -1) {
+			// Allocate/reallocate combined output buffer
+			char *new_complete = realloc(complete_output, total_size + line_length + 1);
+			if (!new_complete) {
+				perror("Memory allocation failed");
+				break;
+			}
+			complete_output = new_complete;
 			
-			// Send an extra newline if the output doesn't end with one
-			if (output_size > 0 && output_buffer[output_size-1] != '\n') {
+			// Copy new line to the end of complete output
+			memcpy(complete_output + total_size, output_line, line_length);
+			total_size += line_length;
+			complete_output[total_size] = '\0';
+		}
+		
+		// Clean up the line buffer
+		free(output_line);
+		fclose(pipe_stream); // This also closes pipes[0]
+		
+		// Send output to client
+		if (complete_output && total_size > 0) {
+			send(client_socket, complete_output, total_size, 0);
+			
+			// Send extra newline if needed
+			if (total_size > 0 && complete_output[total_size - 1] != '\n') {
 				const char* newline = "\n";
 				send(client_socket, newline, 1, 0);
 			}
 		}
+		
+		// Free the complete output buffer
+		free(complete_output);
 	}
 }
 
-// Combined server function that handles both TCP and Unix domain sockets
+// Unified server function with dynamic output buffer
 int run_unified_server(const char *port_str, const char *socket_path, const char *ip_address, bool verbose, const char *log_file) {
+	// Server socket file descriptors
 	int tcp_server_fd = -1;
 	int unix_server_fd = -1;
+	
+	// Set flag that server is running
+	server_running = 1;
+	
+	// Open log file if specified
+	if (log_file != NULL && strlen(log_file) > 0) {
+		log_file_ptr = fopen(log_file, "a");
+		if (!log_file_ptr) {
+			perror("Failed to open log file");
+			// Continue without logging
+		} else {
+			log_message("Server started\n");
+			if (verbose) {
+				printf("Logging to: %s\n", log_file);
+			}
+		}
+	}
+	
+	// Set up socket address structures
 	struct sockaddr_in tcp_address;
 	struct sockaddr_un unix_address;
 	int opt = 1;
+	
+	// Get port number
 	int port = port_str ? atoi(port_str) : SERVER_PORT;
 	
-	// Initialize server_running flag
-	server_running = 1;
+	// Set up signal handlers
+	setup_signal_handlers();
 	
 	// Create TCP socket if port is specified or if no socket path is provided
 	if (port_str != NULL || socket_path == NULL || strlen(socket_path) == 0) {
@@ -575,6 +653,8 @@ int run_unified_server(const char *port_str, const char *socket_path, const char
 			} else {
 				// Set up TCP address
 				tcp_address.sin_family = AF_INET;
+				
+				// Use specified IP address if provided, otherwise use INADDR_ANY
 				if (ip_address != NULL) {
 					// Use the specified IP address
 					if (inet_pton(AF_INET, ip_address, &tcp_address.sin_addr) <= 0) {
@@ -586,6 +666,7 @@ int run_unified_server(const char *port_str, const char *socket_path, const char
 					// Default: listen on all interfaces
 					tcp_address.sin_addr.s_addr = INADDR_ANY;
 				}
+				
 				tcp_address.sin_port = htons(port);
 				
 				// Bind the TCP socket to the port
@@ -599,24 +680,24 @@ int run_unified_server(const char *port_str, const char *socket_path, const char
 						perror("TCP socket listen failed");
 						close(tcp_server_fd);
 						tcp_server_fd = -1;
-					} else {
-						if (verbose) {
-							printf("Server listening on TCP port %d\n", port);
+					} else if (verbose) {
+						printf("Server listening on TCP port %d\n", port);
+						if (log_file_ptr) {
+							log_message("TCP server listening on port %d\n", port);
 						}
-						log_message("TCP server listening on port %d\n", port);
 					}
 				}
 			}
 		}
 	}
 	
-	// Create Unix domain socket if socket path is specified
+	// Create Unix domain socket if path is specified
 	if (socket_path != NULL && strlen(socket_path) > 0) {
-		if ((unix_server_fd = socket(AF_UNIX, SOCK_STREAM, 0)) < 0) {
+		if ((unix_server_fd = socket(AF_UNIX, SOCK_STREAM, 0)) == 0) {
 			perror("Unix socket creation failed");
 			// Continue with TCP socket if that's available
 		} else {
-			// Remove existing socket file if it exists
+			// Remove existing socket file if any
 			unlink(socket_path);
 			
 			// Set up Unix address
@@ -624,8 +705,8 @@ int run_unified_server(const char *port_str, const char *socket_path, const char
 			unix_address.sun_family = AF_UNIX;
 			strncpy(unix_address.sun_path, socket_path, sizeof(unix_address.sun_path) - 1);
 			
-			// Bind Unix socket
-			if (bind(unix_server_fd, (struct sockaddr*)&unix_address, sizeof(struct sockaddr_un)) < 0) {
+			// Bind the Unix socket to the path
+			if (bind(unix_server_fd, (struct sockaddr *)&unix_address, sizeof(unix_address)) < 0) {
 				perror("Unix socket bind failed");
 				close(unix_server_fd);
 				unix_server_fd = -1;
@@ -638,64 +719,140 @@ int run_unified_server(const char *port_str, const char *socket_path, const char
 				} else {
 					if (verbose) {
 						printf("Server listening on Unix socket: %s\n", socket_path);
+						if (log_file_ptr) {
+							log_message("Unix domain socket server listening on: %s\n", socket_path);
+						}
 					}
-					log_message("Unix domain socket server listening on: %s\n", socket_path);
 				}
 			}
 		}
 	}
 	
-	// Check if at least one socket was created successfully
+	// Check if at least one socket was successfully created
 	if (tcp_server_fd < 0 && unix_server_fd < 0) {
-		fprintf(stderr, "Failed to create any server socket\n");
+		fprintf(stderr, "Failed to create any server sockets\n");
+		if (log_file_ptr) {
+			log_message("Failed to create any server sockets\n");
+			fclose(log_file_ptr);
+		}
 		return -1;
 	}
 	
-	// Set up signal handlers
-	setup_signal_handlers();
-	
-	// Initialize and create thread pool
+	// Initialize the thread pool
 	for (int i = 0; i < THREAD_POOL_SIZE; i++) {
 		if (pthread_create(&thread_pool[i], NULL, thread_function, NULL) != 0) {
 			perror("Failed to create thread");
-			return -1;
+			// Continue with fewer threads
 		}
 	}
 	
-	// Set up for select() to monitor standard input and both sockets
+	// File descriptor sets for select()
 	fd_set readfds;
 	int max_fd;
-
-	// Show prompt BEFORE waiting for input
+	
+	// Show initial prompt
 	prompt(true);
 	
 	// Main server loop
 	while (server_running) {
+		// Clear the file descriptor sets
 		FD_ZERO(&readfds);
-		FD_SET(STDIN_FILENO, &readfds);
 		
-		// Add active sockets to the fd set
+		// Add stdin to readfds
+		FD_SET(STDIN_FILENO, &readfds);
 		max_fd = STDIN_FILENO;
+		
+		// Add TCP socket to readfds if it exists
 		if (tcp_server_fd >= 0) {
 			FD_SET(tcp_server_fd, &readfds);
-			if (tcp_server_fd > max_fd) max_fd = tcp_server_fd;
+			max_fd = (tcp_server_fd > max_fd) ? tcp_server_fd : max_fd;
 		}
+		
+		// Add Unix socket to readfds if it exists
 		if (unix_server_fd >= 0) {
 			FD_SET(unix_server_fd, &readfds);
-			if (unix_server_fd > max_fd) max_fd = unix_server_fd;
+			max_fd = (unix_server_fd > max_fd) ? unix_server_fd : max_fd;
 		}
 		
-		// Wait for activity with timeout
-		struct timeval tv = {1, 0}; // 1 second timeout
-		int activity = select(max_fd + 1, &readfds, NULL, NULL, &tv);
+		// Wait for activity on any of the file descriptors
+		struct timeval tv;
+		tv.tv_sec = 1;
+		tv.tv_usec = 0;
 		
+		int activity = select(max_fd + 1, &readfds, NULL, NULL, &tv);
 		if (activity < 0 && errno != EINTR) {
 			perror("select error");
 			break;
 		}
 		
-		if (!server_running) {
-			break;
+		// Check for new TCP connections
+		if (tcp_server_fd >= 0 && FD_ISSET(tcp_server_fd, &readfds)) {
+			struct sockaddr_in client_addr;
+			socklen_t addrlen = sizeof(client_addr);
+			
+			// Accept incoming connection
+			int client_socket = accept(tcp_server_fd, (struct sockaddr *)&client_addr, &addrlen);
+			if (client_socket < 0) {
+				perror("accept failed for TCP connection");
+				continue;
+			}
+			
+			if (verbose) {
+				char client_ip[INET_ADDRSTRLEN];
+				inet_ntop(AF_INET, &client_addr.sin_addr, client_ip, INET_ADDRSTRLEN);
+				printf("Client connected from %s:%d\n", client_ip, ntohs(client_addr.sin_port));
+				if (log_file_ptr) {
+					log_message("Client connected from %s:%d\n", client_ip, ntohs(client_addr.sin_port));
+				}
+			}
+			
+			// Add client to the queue for thread pool
+			int *pclient = malloc(sizeof(int));
+			if (pclient == NULL) {
+				perror("Failed to allocate memory for client socket");
+				close(client_socket);
+			} else {
+				*pclient = client_socket;
+				
+				pthread_mutex_lock(&queue_mutex);
+				enqueue(pclient);
+				pthread_cond_signal(&queue_cond_var);
+				pthread_mutex_unlock(&queue_mutex);
+			}
+		}
+		
+		// Check for new Unix socket connections
+		if (unix_server_fd >= 0 && FD_ISSET(unix_server_fd, &readfds)) {
+			struct sockaddr_un client_addr;
+			socklen_t addrlen = sizeof(client_addr);
+			
+			// Accept incoming connection
+			int client_socket = accept(unix_server_fd, (struct sockaddr *)&client_addr, &addrlen);
+			if (client_socket < 0) {
+				perror("accept failed for Unix socket connection");
+				continue;
+			}
+			
+			if (verbose) {
+				printf("Client connected on Unix socket\n");
+				if (log_file_ptr) {
+					log_message("Client connected on Unix socket\n");
+				}
+			}
+			
+			// Add client to the queue for thread pool
+			int *pclient = malloc(sizeof(int));
+			if (pclient == NULL) {
+				perror("Failed to allocate memory for client socket");
+				close(client_socket);
+			} else {
+				*pclient = client_socket;
+				
+				pthread_mutex_lock(&queue_mutex);
+				enqueue(pclient);
+				pthread_cond_signal(&queue_cond_var);
+				pthread_mutex_unlock(&queue_mutex);
+			}
 		}
 		
 		// Check if there's input from stdin
@@ -858,20 +1015,53 @@ int run_unified_server(const char *port_str, const char *socket_path, const char
 				close(stdout_backup);
 				close(stderr_backup);
 				
-				// Read and display command output
-				char output_buffer[BUFFER_SIZE] = {0};
-				ssize_t output_size = read(pipes[0], output_buffer, BUFFER_SIZE - 1);
-				close(pipes[0]);
+				// Read command output using dynamic buffer with getline
+				FILE *pipe_stream = fdopen(pipes[0], "r");
+				if (!pipe_stream) {
+					perror("Failed to create stream from pipe");
+					close(pipes[0]);
+					prompt(true);
+					continue;
+				}
 				
-				if (output_size > 0) {
-					output_buffer[output_size] = '\0';
-					printf("%s", output_buffer);
+				// Use dynamic buffer with getline to read all output
+				char *output_line = NULL;
+				size_t line_buf_size = 0;
+				ssize_t line_length;
+				char *complete_output = NULL;
+				size_t total_size = 0;
+				
+				while ((line_length = getline(&output_line, &line_buf_size, pipe_stream)) != -1) {
+					// Allocate/reallocate combined output buffer
+					char *new_complete = realloc(complete_output, total_size + line_length + 1);
+					if (!new_complete) {
+						perror("Memory allocation failed");
+						break;
+					}
+					complete_output = new_complete;
+					
+					// Copy new line to the end of complete output
+					memcpy(complete_output + total_size, output_line, line_length);
+					total_size += line_length;
+					complete_output[total_size] = '\0';
+				}
+				
+				// Clean up the line buffer
+				free(output_line);
+				fclose(pipe_stream); // This also closes pipes[0]
+				
+				// Print the output
+				if (complete_output && total_size > 0) {
+					printf("%s", complete_output);
 					
 					// Add newline if output doesn't end with one
-					if (output_buffer[output_size-1] != '\n') {
+					if (total_size > 0 && complete_output[total_size - 1] != '\n') {
 						printf("\n");
 					}
 				}
+				
+				// Free the complete output buffer
+				free(complete_output);
 				
 				// Handle halt or quit command
 				if (tmp_prompt == -1 || tmp_prompt == -2) {
@@ -884,77 +1074,24 @@ int run_unified_server(const char *port_str, const char *socket_path, const char
 				prompt(true);
 			}
 		}
-		
-		// Check for client connections on TCP socket
-		if (tcp_server_fd >= 0 && FD_ISSET(tcp_server_fd, &readfds)) {
-			struct sockaddr_in client_addr;
-			socklen_t client_len = sizeof(client_addr);
-			
-			int client_socket = accept(tcp_server_fd, (struct sockaddr *)&client_addr, &client_len);
-			if (client_socket < 0) {
-				perror("TCP accept failed");
-				continue;
-			}
-			
-			if (verbose) {
-				char client_ip[INET_ADDRSTRLEN];
-				inet_ntop(AF_INET, &client_addr.sin_addr, client_ip, INET_ADDRSTRLEN);
-				printf("Client connected from %s:%d\n", client_ip, ntohs(client_addr.sin_port));
-				log_message("Client connected from %s:%d\n", client_ip, ntohs(client_addr.sin_port));
-			}
-			
-			// Allocate memory for client socket
-			int *pclient = malloc(sizeof(int));
-			if (pclient == NULL) {
-				perror("malloc failed");
-				close(client_socket);
-				continue;
-			}
-			
-			*pclient = client_socket;
-			
-			// Add client to queue for thread pool
-			pthread_mutex_lock(&queue_mutex);
-			enqueue(pclient);
-			pthread_cond_signal(&queue_cond_var);
-			pthread_mutex_unlock(&queue_mutex);
-		}
-		
-		// Check for client connections on Unix socket
-		if (unix_server_fd >= 0 && FD_ISSET(unix_server_fd, &readfds)) {
-			struct sockaddr_un client_addr;
-			socklen_t client_len = sizeof(client_addr);
-			
-			int client_socket = accept(unix_server_fd, (struct sockaddr *)&client_addr, &client_len);
-			if (client_socket < 0) {
-				perror("Unix accept failed");
-				continue;
-			}
-			
-			if (verbose) {
-				printf("Client connected on Unix socket\n");
-				log_message("Client connected on Unix socket\n");
-			}
-			
-			// Allocate memory for client socket
-			int *pclient = malloc(sizeof(int));
-			if (pclient == NULL) {
-				perror("malloc failed");
-				close(client_socket);
-				continue;
-			}
-			
-			*pclient = client_socket;
-			
-			// Add client to queue for thread pool
-			pthread_mutex_lock(&queue_mutex);
-			enqueue(pclient);
-			pthread_cond_signal(&queue_cond_var);
-			pthread_mutex_unlock(&queue_mutex);
+	}
+	
+	// Shutdown procedure
+	printf("Shutting down server...\n");
+	
+	// Close all server sockets
+	if (tcp_server_fd >= 0) {
+		close(tcp_server_fd);
+	}
+	
+	if (unix_server_fd >= 0) {
+		close(unix_server_fd);
+		// Remove Unix socket file
+		if (socket_path != NULL) {
+			unlink(socket_path);
 		}
 	}
 	
-	// Clean up and wait for threads to finish
 	if (server_running) {
 		// Normal shutdown - wait for threads
 		for (int i = 0; i < THREAD_POOL_SIZE; i++) {
@@ -971,17 +1108,6 @@ int run_unified_server(const char *port_str, const char *socket_path, const char
 		}
 	}
 	
-	// Close sockets
-	if (tcp_server_fd >= 0) close(tcp_server_fd);
-	if (unix_server_fd >= 0) {
-		close(unix_server_fd);
-		unlink(socket_path); // Remove Unix socket file
-	}
-	
-	if (verbose) {
-		printf("Server shut down successfully\n");
-	}
-
 	// Close log file if it was opened
 	if (log_file_ptr) {
 		log_message("Server shutting down\n");
