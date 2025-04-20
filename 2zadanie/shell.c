@@ -83,7 +83,7 @@ typedef struct prompt_data {
 // Function prototypes
 void help();
 prompt_data_t prompt(bool print);
-int run_unified_server(const char *port_str, const char *socket_path, bool verbose, const char *log_file);
+int run_unified_server(const char *port_str, const char *socket_path, const char *ip_address, bool verbose, const char *log_file);
 int run_unified_client(const char *port_str, const char *socket_path, const char *ip_address, bool verbose);
 int execute_command(char *command, bool redirect_output, int output_fd);
 void handle_client(int client_socket);
@@ -498,7 +498,7 @@ void handle_client(int client_socket) {
 }
 
 // Combined server function that handles both TCP and Unix domain sockets
-int run_unified_server(const char *port_str, const char *socket_path, bool verbose, const char *log_file) {
+int run_unified_server(const char *port_str, const char *socket_path, const char *ip_address, bool verbose, const char *log_file) {
 	int tcp_server_fd = -1;
 	int unix_server_fd = -1;
 	struct sockaddr_in tcp_address;
@@ -523,7 +523,17 @@ int run_unified_server(const char *port_str, const char *socket_path, bool verbo
 			} else {
 				// Set up TCP address
 				tcp_address.sin_family = AF_INET;
-				tcp_address.sin_addr.s_addr = INADDR_ANY;
+				if (ip_address != NULL) {
+					// Use the specified IP address
+					if (inet_pton(AF_INET, ip_address, &tcp_address.sin_addr) <= 0) {
+						perror("Invalid IP address");
+						close(tcp_server_fd);
+						tcp_server_fd = -1;
+					}
+				} else {
+					// Default: listen on all interfaces
+					tcp_address.sin_addr.s_addr = INADDR_ANY;
+				}
 				tcp_address.sin_port = htons(port);
 				
 				// Bind the TCP socket to the port
@@ -1245,6 +1255,6 @@ int main(int argc, char **argv)
 		return run_unified_client(p_value, u_value, i_value, v_flag);
 	} else {
 		// Run as server (default if no mode specified)
-		return run_unified_server(p_value, u_value, v_flag, l_value);
+		return run_unified_server(p_value, u_value, i_value, v_flag, l_value);
 	}
 }
