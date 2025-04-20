@@ -73,13 +73,16 @@ pthread_t thread_pool[THREAD_POOL_SIZE];
 pthread_mutex_t queue_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t queue_cond_var = PTHREAD_COND_INITIALIZER;
 
+typedef struct prompt_data {
+	char time_str[6]; // HH:MM format with null terminator
+	char username[32]; // Username buffer
+	char hostname[MAX_HOSTNAME_LENGTH]; // Hostname buffer
+} prompt_data_t;
+
+
 // Function prototypes
 void help();
-void prompt();
-// int run_server(const char *port_str, const char *socket_path, bool verbose, const char *log_file);
-// int run_client(const char *port_str, const char *socket_path, const char *ip_address, bool verbose);
-// int run_unix_server(const char *socket_path, bool verbose, const char *log_file);
-// int run_unix_client(const char *socket_path, bool verbose);
+prompt_data_t prompt(bool print);
 int run_unified_server(const char *port_str, const char *socket_path, bool verbose, const char *log_file);
 int run_unified_client(const char *port_str, const char *socket_path, const char *ip_address, bool verbose);
 
@@ -142,7 +145,9 @@ void help() {
 }
 
 // Get current time, username, and hostname for the prompt (removed seconds as requested)
-void prompt() {
+prompt_data_t prompt(bool print) {
+	prompt_data_t prompt_data;
+
 	time_t t = time(NULL);
 	struct tm *tm = localtime(&t);
 	char time_str[6]; // HH:MM plus null terminator
@@ -158,8 +163,21 @@ void prompt() {
 		strcpy(hostname, "unknown");
 	}
 	
-	printf("%s %s@%s$ ", time_str, username, hostname);
-	fflush(stdout);
+	if (print) {
+		// Print the prompt
+		printf("%s %s@%s$ ", time_str, username, hostname);
+		fflush(stdout);
+	}
+
+	// copy the strings to the struct with null termination
+	strncpy(prompt_data.time_str, time_str, sizeof(prompt_data.time_str) - 1);
+	prompt_data.time_str[sizeof(prompt_data.time_str) - 1] = '\0';
+	strncpy(prompt_data.username, username, sizeof(prompt_data.username) - 1);
+	prompt_data.username[sizeof(prompt_data.username) - 1] = '\0';
+	strncpy(prompt_data.hostname, hostname, sizeof(prompt_data.hostname) - 1);
+	prompt_data.hostname[sizeof(prompt_data.hostname) - 1] = '\0';
+
+	return prompt_data;
 }
 
 // Worker function for thread pool
@@ -285,20 +303,9 @@ void handle_client(int client_socket) {
 	while (server_running) {
 		// Send prompt
 		char prompt_buffer[BUFFER_SIZE];
-		time_t t = time(NULL);
-		struct tm *tm = localtime(&t);
-		char time_str[6]; // HH:MM format
-		strftime(time_str, sizeof(time_str), "%H:%M", tm);
-		
-		struct passwd *pw = getpwuid(getuid());
-		const char *username = pw ? pw->pw_name : "user";
-		
-		char hostname[MAX_HOSTNAME_LENGTH];
-		if (gethostname(hostname, sizeof(hostname)) != 0) {
-			strcpy(hostname, "unknown");
-		}
-		
-		snprintf(prompt_buffer, BUFFER_SIZE, "%s %s@%s$ ", time_str, username, hostname);
+		prompt_data_t prompt_data = prompt(false);
+
+		snprintf(prompt_buffer, BUFFER_SIZE, "%s %s@%s$ ", prompt_data.time_str, prompt_data.username, prompt_data.hostname);
 		send(client_socket, prompt_buffer, strlen(prompt_buffer), 0);
 		
 		// Receive command from client
@@ -545,7 +552,7 @@ int run_unified_server(const char *port_str, const char *socket_path, bool verbo
 	int max_fd;
 
 	// Show prompt BEFORE waiting for input
-	prompt();
+	prompt(true);
 	
 	// Main server loop
 	while (server_running) {
@@ -610,7 +617,7 @@ int run_unified_server(const char *port_str, const char *socket_path, bool verbo
 			}
 			
 			if (tmp_prompt != -1 && tmp_prompt != -2) {
-				prompt();
+				prompt(true);
 			}
 		}
 		
