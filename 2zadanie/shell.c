@@ -177,7 +177,6 @@ void setup_signal_handlers()
 	signal(SIGCHLD, sigchld_handler);
 }
 
-// help command implementation
 void help()
 {
 	printf("Author: Marek Cederle\n");
