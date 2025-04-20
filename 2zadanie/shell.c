@@ -85,7 +85,6 @@ void help();
 prompt_data_t prompt(bool print);
 int run_unified_server(const char *port_str, const char *socket_path, bool verbose, const char *log_file);
 int run_unified_client(const char *port_str, const char *socket_path, const char *ip_address, bool verbose);
-
 int execute_command(char *command, bool redirect_output, int output_fd);
 void handle_client(int client_socket);
 void sigchld_handler(int s);
@@ -126,10 +125,10 @@ void help() {
 	printf("Usage: ./shell [OPTIONS]\n");
 	printf("Options:\n");
 	printf("  -h, --help \tShow this help message and exit\n");
-	printf("  -p PORT, --port=PORT \tSet the port number (default: 60069)\n");
-	printf("  -u SOCKET, --socket=SOCKET \tSet the socket (default: /tmp/socket)\n");
-	printf("  -c, --client \tRun as client\n");
-	printf("  -s, --server \tRun as server\n");
+	printf("  -p PORT, --port=PORT \tSet the port number\n");
+	printf("  -u SOCKET, --socket=SOCKET \tSet the socket\n");
+	printf("  -c, --client \tRun as client, sends to default port 60069\n");
+	printf("  -s, --server \tRun as server, receives on default port 60069\n");
 	printf("  -i IP, --ip=IP \tSet IP address\n");
 	printf("  -v, --verbose \tEnable verbose output\n");
 	printf("  -l FILE, --log=FILE \tWrite logs to a file\n");
@@ -140,8 +139,8 @@ void help() {
 	printf("Special characters:\n");
 	printf("  # \tComment (everything after # is ignored)\n");
 	printf("  ; \tCommand separator\n");
-	printf("  \\ \tEscape character\n");
 	printf("  > \tRedirect output to file\n");
+	printf("  \\ \tLine continuation character (allows writing commands across multiple lines, not an escape char)\n");
 }
 
 // Get current time, username, and hostname for the prompt (removed seconds as requested)
@@ -343,7 +342,7 @@ void handle_client(int client_socket) {
 		dup2(pipes[1], STDERR_FILENO);
 		close(pipes[1]);  // Close write end of pipe in parent
 		
-		// Process command: handle comments, command separator, and redirection
+		// Process command: handle continuation, comments, command separator, and redirection
 		char *command = buffer;
 		char *cmd_copy = strdup(command);
 		if (!cmd_copy) {
@@ -355,12 +354,60 @@ void handle_client(int client_socket) {
 			close(pipes[0]);
 			continue;
 		}
-		
-		// Handle escape character (\)
-		for (size_t i = 0; i < strlen(cmd_copy); i++) {
-			if (cmd_copy[i] == '\\' && i + 1 < strlen(cmd_copy)) {
-				// Escape the next character
-				memmove(&cmd_copy[i], &cmd_copy[i + 1], strlen(cmd_copy) - i);
+
+		// Handle line continuation character (\) - collect additional input lines
+		bool continuation = false;
+		if (strlen(cmd_copy) > 0 && cmd_copy[strlen(cmd_copy) - 1] == '\\') {
+			// Remove the continuation character
+			cmd_copy[strlen(cmd_copy) - 1] = '\0';
+			
+			// Flag that we need to continue reading
+			continuation = true;
+			
+			// Send a continuation prompt to the client
+			const char *cont_prompt = "> ";
+			send(client_socket, cont_prompt, strlen(cont_prompt), 0);
+			
+			// Read additional lines
+			char cont_buffer[BUFFER_SIZE];
+			while (continuation && server_running) {
+				bytes_read = recv(client_socket, cont_buffer, BUFFER_SIZE - 1, 0);
+				if (bytes_read <= 0) {
+					break; // Client disconnected or error
+				}
+				
+				cont_buffer[bytes_read] = '\0';
+				
+				// Remove newline character if present
+				if (bytes_read > 0 && cont_buffer[bytes_read - 1] == '\n') {
+					cont_buffer[bytes_read - 1] = '\0';
+				}
+				
+				// Check if this line also ends with continuation
+				if (strlen(cont_buffer) > 0 && cont_buffer[strlen(cont_buffer) - 1] == '\\') {
+					// Remove the continuation character
+					cont_buffer[strlen(cont_buffer) - 1] = '\0';
+					
+					// Append to command without adding the backslash
+					char *new_cmd = malloc(strlen(cmd_copy) + strlen(cont_buffer) + 2); // +2 for space and null terminator
+					if (new_cmd) {
+						sprintf(new_cmd, "%s %s", cmd_copy, cont_buffer);
+						free(cmd_copy);
+						cmd_copy = new_cmd;
+					}
+					
+					// Send another continuation prompt
+					send(client_socket, cont_prompt, strlen(cont_prompt), 0);
+				} else {
+					// Last continuation line - append and finish
+					char *new_cmd = malloc(strlen(cmd_copy) + strlen(cont_buffer) + 2);
+					if (new_cmd) {
+						sprintf(new_cmd, "%s %s", cmd_copy, cont_buffer);
+						free(cmd_copy);
+						cmd_copy = new_cmd;
+					}
+					continuation = false;
+				}
 			}
 		}
 		
@@ -586,6 +633,8 @@ int run_unified_server(const char *port_str, const char *socket_path, bool verbo
 		// Check if there's input from stdin
 		if (FD_ISSET(STDIN_FILENO, &readfds)) {
 			char command[BUFFER_SIZE];
+			static char full_command[BUFFER_SIZE * 4] = {0};  // Larger buffer for multi-line commands
+			static bool in_continuation = false;
 			
 			// Read command
 			if (fgets(command, sizeof(command), stdin) == NULL) {
@@ -603,20 +652,155 @@ int run_unified_server(const char *port_str, const char *socket_path, bool verbo
 			size_t len = strlen(command);
 			if (len > 0 && command[len-1] == '\n') {
 				command[len-1] = '\0';
+				len--;
 			}
 			
-			int tmp_prompt;
+			// Check for line continuation
+			if (len > 0 && command[len-1] == '\\') {
+				// Remove the backslash
+				command[len-1] = '\0';
+				
+				// Append this line to the full command
+				if (in_continuation) {
+					// Add space between continuation lines
+					strcat(full_command, " ");
+					strcat(full_command, command);
+				} else {
+					// First line of a multi-line command
+					strcpy(full_command, command);
+					in_continuation = true;
+				}
+				
+				// Show continuation prompt
+				printf("> ");
+				fflush(stdout);
+				continue;  // Continue reading more input
+			}
+			else if (in_continuation) {
+				// Last line of a multi-line command - append it
+				strcat(full_command, " ");
+				strcat(full_command, command);
+				
+				// Use the complete multi-line command
+				strcpy(command, full_command);
+				in_continuation = false;
+				memset(full_command, 0, sizeof(full_command));
+			}
+			
+			int tmp_prompt = 0;
 			// Process command only if non-empty
 			if (strlen(command) > 0) {
-				// Execute command
-				int result = execute_command(command, false, -1);
-				tmp_prompt = result; // Store result for prompt display
-				if (result == -1 || result == -2) { // halt or quit command on server kills the server
+				// Create pipe for capturing command output
+				int pipes[2];
+				if (pipe(pipes) < 0) {
+					perror("pipe failed");
+					prompt(true);
+					continue;
+				}
+				
+				// Save stdout and stderr
+				int stdout_backup = dup(STDOUT_FILENO);
+				int stderr_backup = dup(STDERR_FILENO);
+				
+				// Redirect stdout and stderr to the pipe
+				dup2(pipes[1], STDOUT_FILENO);
+				dup2(pipes[1], STDERR_FILENO);
+				close(pipes[1]);  // Close write end of pipe
+				
+				// Create a copy of the command for processing
+				char *cmd_copy = strdup(command);
+				if (!cmd_copy) {
+					perror("Memory allocation failed");
+					dup2(stdout_backup, STDOUT_FILENO);
+					dup2(stderr_backup, STDERR_FILENO);
+					close(stdout_backup);
+					close(stderr_backup);
+					close(pipes[0]);
+					prompt(true);
+					continue;
+				}
+				
+				// Handle comments (ignore everything after #)
+				char *comment = strchr(cmd_copy, '#');
+				if (comment) {
+					*comment = '\0';
+				}
+				
+				// Handle command separators (;)
+				char *cmd_part = strtok(cmd_copy, ";");
+				while (cmd_part != NULL && server_running) {
+					// Handle redirection (>)
+					char *redirect = strchr(cmd_part, '>');
+					if (redirect) {
+						*redirect = '\0';  // Split the command at '>'
+						redirect++;        // Move to the filename
+						
+						// Skip leading whitespace
+						while (*redirect == ' ' || *redirect == '\t') redirect++;
+						
+						// Get the filename
+						char filename[256] = {0};
+						sscanf(redirect, "%255s", filename);
+						
+						if (strlen(filename) > 0) {
+							int fd = open(filename, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+							if (fd < 0) {
+								fprintf(stderr, "Error opening file %s: %s\n", filename, strerror(errno));
+							} else {
+								int result = execute_command(cmd_part, true, fd);
+								if (result == -1 || result == -2) {
+									tmp_prompt = result;
+								}
+								close(fd);
+							}
+						}
+					} else {
+						// Regular command execution
+						int result = execute_command(cmd_part, false, -1);
+						if (result == -1 || result == -2) {
+							tmp_prompt = result;
+						}
+					}
+					
+					// Get next command part
+					cmd_part = strtok(NULL, ";");
+				}
+				
+				free(cmd_copy);
+				
+				// Flush output
+				fflush(stdout);
+				fflush(stderr);
+				
+				// Restore stdout and stderr
+				dup2(stdout_backup, STDOUT_FILENO);
+				dup2(stderr_backup, STDERR_FILENO);
+				close(stdout_backup);
+				close(stderr_backup);
+				
+				// Read and display command output
+				char output_buffer[BUFFER_SIZE] = {0};
+				ssize_t output_size = read(pipes[0], output_buffer, BUFFER_SIZE - 1);
+				close(pipes[0]);
+				
+				if (output_size > 0) {
+					output_buffer[output_size] = '\0';
+					printf("%s", output_buffer);
+					
+					// Add newline if output doesn't end with one
+					if (output_buffer[output_size-1] != '\n') {
+						printf("\n");
+					}
+				}
+				
+				// Handle halt or quit command
+				if (tmp_prompt == -1 || tmp_prompt == -2) {
 					server_running = 0;
 				}
 			}
 			
-			if (tmp_prompt != -1 && tmp_prompt != -2) {
+			// Show prompt after command execution if not shutting down
+			if (server_running) {
 				prompt(true);
 			}
 		}
@@ -847,21 +1031,37 @@ int run_unified_client(const char *port_str, const char *socket_path, const char
 					// Echo the newline to terminal
 					printf("\n");
 					
-					// Send the command to the server
-					current_cmd[cursor_pos] = '\n';
-					write(sock, current_cmd, cursor_pos + 1);
-					
-					// Check for quit command
-					if (strncmp(current_cmd, "quit", 4) == 0) {
-						if (verbose) {
-							printf("Quitting client...\n");
-						}
-						break;
+					// Check if the command ends with a continuation character
+					bool needs_continuation = false;
+					if (cursor_pos > 0 && current_cmd[cursor_pos - 1] == '\\') {
+						// This is a continuation - don't send the command yet
+						needs_continuation = true;
+						
+						// Remove the backslash from the command
+						current_cmd[--cursor_pos] = '\0';
+						
+						// Show continuation prompt to the client
+						printf("> ");
+						fflush(stdout);
 					}
 					
-					// Reset command buffer
-					memset(current_cmd, 0, sizeof(current_cmd));
-					cursor_pos = 0;
+					if (!needs_continuation) {
+						// Send the complete command to the server
+						current_cmd[cursor_pos] = '\n';
+						write(sock, current_cmd, cursor_pos + 1);
+						
+						// Check for quit command
+						if (strncmp(current_cmd, "quit", 4) == 0) {
+							if (verbose) {
+								printf("Quitting client...\n");
+							}
+							break;
+						}
+						
+						// Reset command buffer
+						memset(current_cmd, 0, sizeof(current_cmd));
+						cursor_pos = 0;
+					}
 				} else if (ch == 127 || ch == '\b') { // Backspace
 					if (cursor_pos > 0) {
 						cursor_pos--;
