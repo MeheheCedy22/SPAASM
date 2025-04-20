@@ -1,10 +1,10 @@
 # Pseudokod na jadro programu
-Note: je to skoro to iste len s nejakymi malymi zmenami ktore som robil priamo v kode aby som to nemusel pisat este aj sem
+Note: This is nearly the same as the main code, but with some small changes that I made directly in the code so I don't have to write it here again
 
 data segment:
- <!-- - flag na zistenie ci je found slovo ktore zacina na uppercase -->
- - counter vyskytov riadkov
- - offset na zaciatok riadku
+ <!-- - flag to find out if the word starting with uppercase is found -->
+ - counter - how many lines
+ - offset to start of the line
 
 
 pseudo code:
