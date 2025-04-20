@@ -1,3 +1,57 @@
+// Author: Name Surname
+/* MANDATORY TASKS */
+/*
+- [x] -help ; -halt ; -quit program arguments
+- [x] help, halt, quit commands in shell
+- [x] at least 4 of these 6 special characters: # ; < > | \ implemented: # ; > \
+- [x] option to specify -p port and -u socket as program arguments
+- [x] shell prompt should look like: hh:mm user@hostname$ use system calls and libraries to get time, user and hostname
+- [x] running commands and file redirects must be implemented using syscalls CANNOT USE popen() OR SIMILAR
+- [x] program argument -s is for server which will listen on socket and accept connections from clients and will do all the above work basically
+- [x] program argument -c is for client which will establish connection to server through socket where client will send its stdin and will read the data from server for output to its stdout
+- [x] implement basic error handling for all the above tasks
+- [x] no warning can be shown when compiling even with -Wall
+*/
+
+/* VOLUNTARY TASKS I HAVE IMPLEMENTED */
+/*
+- [x] 7. (2 body) option to specify -i ip address as program argument
+- [x] 11. (2 body) use of external custom library
+- [x] 14. (1 bod) option to specify -v verbose output as program argument
+- [x] 18. (2 body) option to specify -l for log file as program argument
+- [x] 21. (2 body) functional Makefile
+- [x] 23. (1 bod) good comments in english
+*/
+
+/* SOURCES */
+/*
+- Custom Shell
+	- https://brennan.io/2015/01/16/write-a-shell-in-c/
+
+- Getopts
+	- https://www.gnu.org/software/libc/manual/html_node/Example-of-Getopt.html
+	- https://www.gnu.org/software/libc/manual/html_node/Getopt-Long-Option-Example.html
+
+
+- https://www.youtube.com/@JacobSorber/videos
+	- Multithreading
+	- https://www.youtube.com/watch?v=Pg_4Jz8ZIH4
+	- https://www.youtube.com/watch?v=FMNnusHqjpw
+	- https://www.youtube.com/watch?v=P6Z5K8zmEmc
+	- Network programming
+	- https://www.youtube.com/watch?v=HpAdCgs9HCI
+	- https://www.youtube.com/watch?v=il4N6KjVQ-s
+	- https://www.youtube.com/watch?v=Y6pFtgRdUts
+
+- Lectures from SPAASM course
+- In some parts of the program, AI (LLM) is a co-author
+
+*/
+
+// Termín odovzdávania: 20.04.2025 23:59
+// Ročník, ak. rok, semester, odbor: tretí, 2024/2025, letný, informatika
+// Riešenie:
+
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -23,92 +77,35 @@
 #include <sys/ioctl.h>
 #include <sys/un.h>
 #include <stdarg.h>
+
 #include "custom_queue.h"
 
-/* SOURCES */
-/*
-- Custom Shell
-	- https://brennan.io/2015/01/16/write-a-shell-in-c/
-
-- Getopts
-	- https://www.gnu.org/software/libc/manual/html_node/Example-of-Getopt.html
-	- https://www.gnu.org/software/libc/manual/html_node/Getopt-Long-Option-Example.html
-
-
-- https://www.youtube.com/@JacobSorber/videos
-	- Multithreading
-	- https://www.youtube.com/watch?v=Pg_4Jz8ZIH4
-	- https://www.youtube.com/watch?v=FMNnusHqjpw
-	- https://www.youtube.com/watch?v=P6Z5K8zmEmc
-	- Network programming
-	- https://www.youtube.com/watch?v=HpAdCgs9HCI
-	- https://www.youtube.com/watch?v=il4N6KjVQ-s
-	- https://www.youtube.com/watch?v=Y6pFtgRdUts
-
-- Prednasky z predmetu SPAASM
-- Niektore casti boli pisane s pomocou AI (LLMs)
-
-*/
-
-/* THESE ARE THE MAIN TASKS WHICH ARE MANDATORY */
-/* WHAT TO IMPLEMENT / TODOs / TASKS
-- [x] -help ; -halt ; -quit program arguments
-- [x] help, halt, quit commands in shell
-- [x] at least 4 of these 6 special characters: # ; < > | \ implemented: # ; > \
-- [x] option to specify -p port and -u socket as program arguments
-- [x] shell prompt should look like: hh:mm user@hostname$ use system calls and libraries to get time, user and hostname
-- [x] running commands and file redirects must be implemented using syscalls CANNOT USE popen() OR SIMILAR
-- [x] program argument -s is for server which will listen on socket and accept connections from clients and will do all the above work basically
-- [x] program argument -c is for client which will establish connection to server through socket where client will send its stdin and will read the data from server for output to its stdout
-- [x] implement basic error handling for all the above tasks
-- [x] no warning can be shown when compiling even with -Wall
-*/
-
-/* VOLUNTARY TASKS*/
-/*
-- [x] option to specify -i ip address as program argument
-- [x] use of external custom library
-- [x] option to specify -v verbose output as program argument
-- [x] option to specify -l for log file as program argument
-- [x] functional Makefile
-- [ ] good comments in english
-*/
-
-/* VOLUNTARY TASKS GRADING */
-/*
-	7. (2 body)
-	11. (2 body)
-	14. (1 bod)
-	18. (2 body)
-	21. (2 body)
-	23. (1 bod)
-*/
-
-#define SERVER_PORT 60069
-#define BUFFER_SIZE 1024
-#define SERVER_BACKLOG 5
+#define DEFAULT_IP_ADDRESS "127.0.0.1"
+#define DEFAULT_SERVER_PORT 60069
+#define BUFFER_SIZE 1024 // size of buffer for client command send to server
+#define SERVER_BACKLOG 5 // max number of pending connections
 #define THREAD_POOL_SIZE 10
 #define MAX_HOSTNAME_LENGTH 256
 
-// Flag for server shutdown
+// flag for server shutdown
 volatile sig_atomic_t server_running = 1;
 
-// Global log file pointer
+// global log file pointer
 FILE *log_file_ptr = NULL;
 
-// Thread pool and synchronization primitives
+// thread pool and synchronization variables
 pthread_t thread_pool[THREAD_POOL_SIZE];
 pthread_mutex_t queue_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t queue_cond_var = PTHREAD_COND_INITIALIZER;
 
 typedef struct prompt_data
 {
-	char time_str[6];					// HH:MM format with null terminator
-	char username[32];					// Username buffer
-	char hostname[MAX_HOSTNAME_LENGTH]; // Hostname buffer
+	char time_str[6]; // hh:mm format with null terminator
+	char username[32];
+	char hostname[MAX_HOSTNAME_LENGTH];
 } prompt_data_t;
 
-// Function prototypes
+// function prototypes
 void log_message(const char *format, ...);
 void help();
 prompt_data_t prompt(bool print);
@@ -121,111 +118,114 @@ void handle_shutdown(int sig);
 void setup_signal_handlers();
 void *thread_function(void *arg);
 
-// Function to log messages
+// function to log messages
 void log_message(const char *format, ...)
 {
 	if (!log_file_ptr)
 		return;
 
-	// Get current timestamp
+	// get current timestamp
 	time_t now = time(NULL);
 	struct tm *tm_info = localtime(&now);
 	char timestamp[20];
 	strftime(timestamp, sizeof(timestamp), "%Y-%m-%d %H:%M:%S", tm_info);
 
-	// Write timestamp to log
+	// write timestamp to log
 	fprintf(log_file_ptr, "[%s] ", timestamp);
 
-	// Write message with variable arguments
+	// write message with variable arguments
 	va_list args;
 	va_start(args, format);
 	vfprintf(log_file_ptr, format, args);
 	va_end(args);
 
-	// Ensure log is written immediately
+	// write to log
 	fflush(log_file_ptr);
 }
 
-// Signal handler to prevent zombie processes
+// signal handler to prevent zombie processes
 void sigchld_handler(int s)
 {
-	// Wait for all dead processes
+	// wait for all dead processes
 	while (waitpid(-1, NULL, WNOHANG) > 0)
-		;
+	{
+		// do nothing, just collect	 the dead processes
+	};
 
-	// Re-establish the signal handler
+	// re-establish the signal handler
 	signal(SIGCHLD, sigchld_handler);
 }
 
-// Signal handler for server shutdown
+// signal handler for server shutdown
 void handle_shutdown(int sig)
 {
 	server_running = 0;
 	printf("Server shutting down...\n");
 }
 
-// Set up all signal handlers
+// set up all signal handlers
 void setup_signal_handlers()
 {
-	// Set up signal handlers for server shutdown
+	// set up signal handlers for server shutdown
 	signal(SIGINT, handle_shutdown);
 	signal(SIGTERM, handle_shutdown);
 	signal(SIGUSR1, handle_shutdown);
 
-	// Set up SIGCHLD handler to prevent zombie processes
+	// set up SIGCHLD handler to prevent zombie processes
 	signal(SIGCHLD, sigchld_handler);
 }
 
-// Help command implementation
+// help command implementation
 void help()
 {
 	printf("Author: Name Surname\n");
-	printf("About: This program is a simple interactive shell written in C using client-server architecture.\n");
+	printf("About: Simple interactive shell written in C using client-server architecture.\n");
 	printf("Usage: ./shell [OPTIONS]\n");
 	printf("Options:\n");
 	printf("  -h, --help \tShow this help message and exit\n");
-	printf("  -p PORT, --port=PORT \tSet the port number\n");
-	printf("  -u SOCKET, --socket=SOCKET \tSet the socket\n");
-	printf("  -c, --client \tRun as client, sends to default port 60069\n");
-	printf("  -s, --server \tRun as server, receives on default port 60069\n");
-	printf("  -i IP, --ip=IP \tSet IP address\n");
-	printf("  -v, --verbose \tEnable verbose output\n");
-	printf("  -l FILE, --log=FILE \tWrite logs to a file\n");
+	printf("  -p PORT \tSet the port number\n");
+	printf("  -u SOCKET \tSet the socket\n");
+	printf("  -c \tRun as client, sends to default port 60069\n");
+	printf("  -s \tRun as server, receives on default port 60069\n");
+	printf("  -i IP \tSet IP address\n");
+	printf("  -v \tEnable verbose output\n");
+	printf("  -l FILE \tWrite logs to a file\n");
 	printf("Commands in shell:\n");
 	printf("  help \tShow this help message\n");
 	printf("  halt \tHalt the server\n");
-	printf("  quit \tQuit the shell\n");
+	printf("  quit \tQuit the current shell\n");
 	printf("Special characters:\n");
 	printf("  # \tComment (everything after # is ignored)\n");
-	printf("  ; \tCommand separator\n");
-	printf("  > \tRedirect output to file\n");
+	printf("  ; \tCommand separator (example: echo example1 ; echo example 2)\n");
+	printf("  > \tRedirect output to file (example: ls > example.txt)\n");
 	printf("  \\ \tLine continuation character (allows writing commands across multiple lines, not an escape char)\n");
 }
 
-// Get current time, username, and hostname for the prompt (removed seconds as requested)
+// get current time, username, and hostname for the prompt
 prompt_data_t prompt(bool print)
 {
 	prompt_data_t prompt_data;
 
 	time_t t = time(NULL);
 	struct tm *tm = localtime(&t);
-	char time_str[6]; // HH:MM plus null terminator
+	char time_str[6]; // hh:mm plus null terminator
 	strftime(time_str, sizeof(time_str), "%H:%M", tm);
 
-	// Get username
+	// get username
 	struct passwd *pw = getpwuid(getuid());
 	const char *username = pw ? pw->pw_name : "user";
 
-	// Get hostname
+	// get hostname
 	char hostname[MAX_HOSTNAME_LENGTH];
 	if (gethostname(hostname, sizeof(hostname)) != 0)
 	{
 		strcpy(hostname, "unknown");
 	}
 
+	// print the prompt for the server stdin
+	// prompt for client is send by server
 	if (print)
 	{
-		// Print the prompt
 		printf("%s %s@%s$ ", time_str, username, hostname);
 		fflush(stdout);
 	}
@@ -241,10 +241,10 @@ prompt_data_t prompt(bool print)
 	return prompt_data;
 }
 
-// Worker function for thread pool
+// worker function for thread pool
 void *thread_function(void *arg)
 {
-	// Set thread to be cancelable
+	// set thread to be cancelable
 	pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
 	pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
 
@@ -253,22 +253,22 @@ void *thread_function(void *arg)
 		int *pclient;
 		pthread_mutex_lock(&queue_mutex);
 
-		// Wait for a client to be available in the queue
+		// wait for a client to be available in the queue
 		while ((pclient = dequeue()) == NULL && server_running)
 		{
-			// Wait for signal that a client was added to queue
+			// wait for signal that a client was added to queue
 			pthread_cond_wait(&queue_cond_var, &queue_mutex);
 		}
 
 		pthread_mutex_unlock(&queue_mutex);
 
-		// Check if we're shutting down
+		// check if server is shutting down
 		if (!server_running)
 		{
 			break;
 		}
 
-		// Handle client if we got one
+		// handle client if we got one
 		if (pclient != NULL)
 		{
 			handle_client(*pclient);
@@ -280,7 +280,6 @@ void *thread_function(void *arg)
 	return NULL;
 }
 
-// Execute command function
 int execute_command(char *command, bool redirect_output, int output_fd)
 {
 	if (!command || strlen(command) == 0)
@@ -288,7 +287,7 @@ int execute_command(char *command, bool redirect_output, int output_fd)
 		return 0;
 	}
 
-	// Trim leading and trailing whitespace
+	// trim leading and trailing whitespace
 	char *cmd = command;
 	while (*cmd == ' ' || *cmd == '\t')
 		cmd++;
@@ -305,7 +304,7 @@ int execute_command(char *command, bool redirect_output, int output_fd)
 		return 0;
 	}
 
-	// Check for built-in commands
+	// check for built-in commands
 	if (strcmp(cmd, "help") == 0)
 	{
 		help();
@@ -314,40 +313,41 @@ int execute_command(char *command, bool redirect_output, int output_fd)
 	else if (strcmp(cmd, "halt") == 0)
 	{
 		printf("Server halting...\n");
-		server_running = 0; // Signal to halt the server
+		// signal to halt the server
+		server_running = 0;
 
-		// Force immediate return to main to handle shutdown
-		if (getpid() == getpgid(0))
-		{			 // Only if this is the main process
-			exit(0); // Force immediate exit
+		// force immediate return to main to handle shutdown
+		if (getpid() == getpgid(0)) // only if this is the main process
+		{
+			exit(0); // force immediate exit
 		}
 
-		return -1; // Signal to halt the server
+		return -1; // signal to halt the server
 	}
 	else if (strcmp(cmd, "quit") == 0)
 	{
 		printf("Exiting shell...\n");
-		return -2; // Signal to quit
+		return -2; // signal to quit
 	}
 
-	// Fork and execute command
+	// fork and execute command
 	pid_t pid = fork();
 	if (pid < 0)
 	{
 		perror("fork failed");
 		return 1;
 	}
-	else if (pid == 0)
+	else if (pid == 0) // child process
 	{
-		// Child process
 		if (redirect_output && output_fd > 0)
 		{
-			// Redirect stdout to file
+			// redirect stdout to file
 			dup2(output_fd, STDOUT_FILENO);
 			close(output_fd);
 		}
 
-		// Execute the command
+		// execute the command
+		// max of 63 arguments + NULL terminator for a command
 		char *args[64];
 		int i = 0;
 
@@ -361,37 +361,37 @@ int execute_command(char *command, bool redirect_output, int output_fd)
 
 		execvp(args[0], args);
 
-		// If execvp returns, it means an error occurred
+		// if execvp returns, it means an error occurred
 		perror("execvp failed");
 		exit(EXIT_FAILURE);
 	}
 	else
 	{
-		// Parent process
+		// parent process
 		int status;
 		waitpid(pid, &status, 0);
 		return WEXITSTATUS(status);
 	}
 }
 
-// Client handling function with dynamic output buffer
+// client handling with dynamic output buffer
 void handle_client(int client_socket)
 {
 	char buffer[BUFFER_SIZE];
 	ssize_t bytes_read;
-	int pipes[2]; // For capturing command output
+	int pipes[2]; // for capturing command output
 
-	// Get client address info for logging
+	// get client address info for logging
 	struct sockaddr_storage client_addr;
 	socklen_t addr_len = sizeof(client_addr);
 	char client_info[50] = "unknown";
 
-	// Try to get client information
+	// try to get client information
 	if (getpeername(client_socket, (struct sockaddr *)&client_addr, &addr_len) == 0)
 	{
 		if (client_addr.ss_family == AF_INET)
 		{
-			// IPv4 client
+			// ipv4 client
 			struct sockaddr_in *s = (struct sockaddr_in *)&client_addr;
 			char ip_str[INET_ADDRSTRLEN];
 			inet_ntop(AF_INET, &s->sin_addr, ip_str, sizeof(ip_str));
@@ -399,46 +399,46 @@ void handle_client(int client_socket)
 		}
 		else if (client_addr.ss_family == AF_UNIX)
 		{
-			// Unix domain socket client
+			// unix domain socket client
 			strcpy(client_info, "unix-socket");
 		}
 	}
 
-	// Send initial welcome message
+	// send initial welcome message
 	const char *welcome_msg = "Connected to shell server. Type commands or 'quit' to exit.\n";
 	send(client_socket, welcome_msg, strlen(welcome_msg), 0);
 
 	while (server_running)
 	{
-		// Send prompt
+		// send prompt
 		char prompt_buffer[BUFFER_SIZE];
 		prompt_data_t prompt_data = prompt(false);
 
 		snprintf(prompt_buffer, BUFFER_SIZE, "%s %s@%s$ ", prompt_data.time_str, prompt_data.username, prompt_data.hostname);
 		send(client_socket, prompt_buffer, strlen(prompt_buffer), 0);
 
-		// Receive command from client
+		// receive command from client
 		bytes_read = recv(client_socket, buffer, BUFFER_SIZE - 1, 0);
 		if (bytes_read <= 0)
 		{
-			break; // Client disconnected or error
+			break; // client disconnected or error
 		}
 
 		buffer[bytes_read] = '\0';
 
-		// Remove newline character if present
+		// remove newline character if present
 		if (bytes_read > 0 && buffer[bytes_read - 1] == '\n')
 		{
 			buffer[bytes_read - 1] = '\0';
 		}
 
-		// Log the received command
+		// log the received command
 		if (log_file_ptr)
 		{
 			log_message("Client [%s] command: %s\n", client_info, buffer);
 		}
 
-		// Process the command
+		// process the command
 		if (strncmp(buffer, "quit", 4) == 0)
 		{
 			const char *goodbye = "Disconnecting from server. Goodbye!\n";
@@ -446,23 +446,23 @@ void handle_client(int client_socket)
 			break;
 		}
 
-		// Create pipe for capturing command output
+		// create pipe for capturing command output
 		if (pipe(pipes) < 0)
 		{
 			perror("pipe failed");
 			continue;
 		}
 
-		// Save stdout and stderr
+		// save stdout and stderr
 		int stdout_backup = dup(STDOUT_FILENO);
 		int stderr_backup = dup(STDERR_FILENO);
 
-		// Redirect stdout and stderr to the pipe
+		// redirect stdout and stderr to the pipe
 		dup2(pipes[1], STDOUT_FILENO);
 		dup2(pipes[1], STDERR_FILENO);
-		close(pipes[1]); // Close write end of pipe in parent
+		close(pipes[1]); // close write end of pipe in parent
 
-		// Process command: handle continuation, comments, command separator, and redirection
+		// process command: handle continuation, comments, command separator, and redirection
 		char *command = buffer;
 		char *cmd_copy = strdup(command);
 		if (!cmd_copy)
@@ -476,45 +476,45 @@ void handle_client(int client_socket)
 			continue;
 		}
 
-		// Handle line continuation character (\) - collect additional input lines
+		// handle line continuation character (\) - collect additional input lines
 		bool continuation = false;
 		if (strlen(cmd_copy) > 0 && cmd_copy[strlen(cmd_copy) - 1] == '\\')
 		{
-			// Remove the continuation character
+			// remove the continuation character
 			cmd_copy[strlen(cmd_copy) - 1] = '\0';
 
-			// Flag that we need to continue reading
+			// flag that we need to continue reading
 			continuation = true;
 
-			// Send a continuation prompt to the client
+			// send a continuation prompt to the client
 			const char *cont_prompt = "> ";
 			send(client_socket, cont_prompt, strlen(cont_prompt), 0);
 
-			// Read additional lines
+			// read additional lines
 			char cont_buffer[BUFFER_SIZE];
 			while (continuation && server_running)
 			{
 				bytes_read = recv(client_socket, cont_buffer, BUFFER_SIZE - 1, 0);
 				if (bytes_read <= 0)
 				{
-					break; // Client disconnected or error
+					break; // client disconnected or error
 				}
 
 				cont_buffer[bytes_read] = '\0';
 
-				// Remove newline character if present
+				// remove newline character if present
 				if (bytes_read > 0 && cont_buffer[bytes_read - 1] == '\n')
 				{
 					cont_buffer[bytes_read - 1] = '\0';
 				}
 
-				// Check if this line also ends with continuation
+				// check if this line also ends with continuation
 				if (strlen(cont_buffer) > 0 && cont_buffer[strlen(cont_buffer) - 1] == '\\')
 				{
-					// Remove the continuation character
+					// remove the continuation character
 					cont_buffer[strlen(cont_buffer) - 1] = '\0';
 
-					// Append to command without adding the backslash
+					// append to command without adding the backslash
 					char *new_cmd = malloc(strlen(cmd_copy) + strlen(cont_buffer) + 2); // +2 for space and null terminator
 					if (new_cmd)
 					{
@@ -523,12 +523,12 @@ void handle_client(int client_socket)
 						cmd_copy = new_cmd;
 					}
 
-					// Send another continuation prompt
+					// send another continuation prompt
 					send(client_socket, cont_prompt, strlen(cont_prompt), 0);
 				}
 				else
 				{
-					// Last continuation line - append and finish
+					// last continuation line - append and finish
 					char *new_cmd = malloc(strlen(cmd_copy) + strlen(cont_buffer) + 2);
 					if (new_cmd)
 					{
@@ -541,29 +541,29 @@ void handle_client(int client_socket)
 			}
 		}
 
-		// Handle comments (ignore everything after #)
+		// handle comments (ignore everything after #)
 		char *comment = strchr(cmd_copy, '#');
 		if (comment)
 		{
 			*comment = '\0';
 		}
 
-		// Handle command separators (;)
+		// handle command separators (;)
 		char *cmd_part = strtok(cmd_copy, ";");
 		while (cmd_part != NULL)
 		{
-			// Handle redirection (>)
+			// handle redirection (>)
 			char *redirect = strchr(cmd_part, '>');
 			if (redirect)
 			{
-				*redirect = '\0'; // Split the command at '>'
-				redirect++;		  // Move to the filename
+				*redirect = '\0'; // split the command at '>'
+				redirect++;		  // move to the filename
 
-				// Skip leading whitespace
+				// skip leading whitespace
 				while (*redirect == ' ' || *redirect == '\t')
 					redirect++;
 
-				// Get the filename
+				// get the filename
 				char filename[256] = {0};
 				sscanf(redirect, "%255s", filename);
 
@@ -583,13 +583,13 @@ void handle_client(int client_socket)
 			}
 			else
 			{
-				// Regular command execution
+				// regular command execution
 				int result = execute_command(cmd_part, false, -1);
 				if (result == -1)
 				{ // halt command
 					free(cmd_copy);
 
-					// Restore stdout and stderr
+					// restore stdout and stderr
 					dup2(stdout_backup, STDOUT_FILENO);
 					dup2(stderr_backup, STDERR_FILENO);
 					close(stdout_backup);
@@ -603,23 +603,23 @@ void handle_client(int client_socket)
 				}
 			}
 
-			// Get next command part
+			// get next command part
 			cmd_part = strtok(NULL, ";");
 		}
 
 		free(cmd_copy);
 
-		// Flush stdout to ensure all output is written to the pipe
+		// flush stdout to ensure all output is written to the pipe
 		fflush(stdout);
 		fflush(stderr);
 
-		// Restore stdout and stderr
+		// restore stdout and stderr
 		dup2(stdout_backup, STDOUT_FILENO);
 		dup2(stderr_backup, STDERR_FILENO);
 		close(stdout_backup);
 		close(stderr_backup);
 
-		// Read command output using dynamic buffer with getline
+		// read command output using dynamic buffer with getline
 		FILE *pipe_stream = fdopen(pipes[0], "r");
 		if (!pipe_stream)
 		{
@@ -628,7 +628,7 @@ void handle_client(int client_socket)
 			continue;
 		}
 
-		// Use dynamic buffer with getline to read all output
+		// use dynamic buffer with getline to read all output
 		char *output_line = NULL;
 		size_t line_buf_size = 0;
 		ssize_t line_length;
@@ -637,7 +637,7 @@ void handle_client(int client_socket)
 
 		while ((line_length = getline(&output_line, &line_buf_size, pipe_stream)) != -1)
 		{
-			// Allocate/reallocate combined output buffer
+			// allocate/reallocate combined output buffer
 			char *new_complete = realloc(complete_output, total_size + line_length + 1);
 			if (!new_complete)
 			{
@@ -646,22 +646,22 @@ void handle_client(int client_socket)
 			}
 			complete_output = new_complete;
 
-			// Copy new line to the end of complete output
+			// copy new line to the end of complete output
 			memcpy(complete_output + total_size, output_line, line_length);
 			total_size += line_length;
 			complete_output[total_size] = '\0';
 		}
 
-		// Clean up the line buffer
+		// clean up the line buffer
 		free(output_line);
-		fclose(pipe_stream); // This also closes pipes[0]
+		fclose(pipe_stream); // this also closes pipes[0]
 
-		// Send output to client
+		// send output to client
 		if (complete_output && total_size > 0)
 		{
 			send(client_socket, complete_output, total_size, 0);
 
-			// Send extra newline if needed
+			// send extra newline if needed
 			if (total_size > 0 && complete_output[total_size - 1] != '\n')
 			{
 				const char *newline = "\n";
@@ -669,29 +669,29 @@ void handle_client(int client_socket)
 			}
 		}
 
-		// Free the complete output buffer
+		// free the complete output buffer
 		free(complete_output);
 	}
 }
 
-// Unified server function with dynamic output buffer
+// unified server with dynamic output buffer (unified means for both tcp and unix sockets)
 int run_unified_server(const char *port_str, const char *socket_path, const char *ip_address, bool verbose, const char *log_file)
 {
-	// Server socket file descriptors
+	// server socket file descriptors
 	int tcp_server_fd = -1;
 	int unix_server_fd = -1;
 
-	// Set flag that server is running
+	// set flag that server is running
 	server_running = 1;
 
-	// Open log file if specified
+	// open log file if specified
 	if (log_file != NULL && strlen(log_file) > 0)
 	{
 		log_file_ptr = fopen(log_file, "a");
 		if (!log_file_ptr)
 		{
 			perror("Failed to open log file");
-			// Continue without logging
+			// continue without logging
 		}
 		else
 		{
@@ -703,28 +703,28 @@ int run_unified_server(const char *port_str, const char *socket_path, const char
 		}
 	}
 
-	// Set up socket address structures
+	// set up socket address structures
 	struct sockaddr_in tcp_address;
 	struct sockaddr_un unix_address;
 	int opt = 1;
 
-	// Get port number
-	int port = port_str ? atoi(port_str) : SERVER_PORT;
+	// get port number
+	int port = port_str ? atoi(port_str) : DEFAULT_SERVER_PORT;
 
-	// Set up signal handlers
+	// set up signal handlers
 	setup_signal_handlers();
 
-	// Create TCP socket if port is specified or if no socket path is provided
+	// create tcp socket if port is specified or if no socket path is provided
 	if (port_str != NULL || socket_path == NULL || strlen(socket_path) == 0)
 	{
 		if ((tcp_server_fd = socket(AF_INET, SOCK_STREAM, 0)) == 0)
 		{
 			perror("TCP socket creation failed");
-			// Continue with Unix socket if that's available
+			// continue with unix socket if that's available
 		}
 		else
 		{
-			// Set socket options
+			// set socket options
 			if (setsockopt(tcp_server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)))
 			{
 				perror("setsockopt failed for TCP socket");
@@ -733,13 +733,13 @@ int run_unified_server(const char *port_str, const char *socket_path, const char
 			}
 			else
 			{
-				// Set up TCP address
+				// set up tcp address
 				tcp_address.sin_family = AF_INET;
 
-				// Use specified IP address if provided, otherwise use INADDR_ANY
+				// use specified ip address if provided, otherwise use inaddr_any
 				if (ip_address != NULL)
 				{
-					// Use the specified IP address
+					// use the specified ip address
 					if (inet_pton(AF_INET, ip_address, &tcp_address.sin_addr) <= 0)
 					{
 						perror("Invalid IP address");
@@ -749,13 +749,13 @@ int run_unified_server(const char *port_str, const char *socket_path, const char
 				}
 				else
 				{
-					// Default: listen on all interfaces
+					// default: listen on all interfaces
 					tcp_address.sin_addr.s_addr = INADDR_ANY;
 				}
 
 				tcp_address.sin_port = htons(port);
 
-				// Bind the TCP socket to the port
+				// bind the tcp socket to the port
 				if (bind(tcp_server_fd, (struct sockaddr *)&tcp_address, sizeof(tcp_address)) < 0)
 				{
 					perror("TCP socket bind failed");
@@ -764,7 +764,7 @@ int run_unified_server(const char *port_str, const char *socket_path, const char
 				}
 				else
 				{
-					// Listen on TCP socket
+					// listen on tcp socket
 					if (listen(tcp_server_fd, SERVER_BACKLOG) < 0)
 					{
 						perror("TCP socket listen failed");
@@ -784,25 +784,25 @@ int run_unified_server(const char *port_str, const char *socket_path, const char
 		}
 	}
 
-	// Create Unix domain socket if path is specified
+	// create unix domain socket if path is specified
 	if (socket_path != NULL && strlen(socket_path) > 0)
 	{
 		if ((unix_server_fd = socket(AF_UNIX, SOCK_STREAM, 0)) == 0)
 		{
 			perror("Unix socket creation failed");
-			// Continue with TCP socket if that's available
+			// continue with tcp socket if that's available
 		}
 		else
 		{
-			// Remove existing socket file if any
+			// remove existing socket file if any
 			unlink(socket_path);
 
-			// Set up Unix address
+			// set up unix address
 			memset(&unix_address, 0, sizeof(struct sockaddr_un));
 			unix_address.sun_family = AF_UNIX;
 			strncpy(unix_address.sun_path, socket_path, sizeof(unix_address.sun_path) - 1);
 
-			// Bind the Unix socket to the path
+			// bind the unix socket to the path
 			if (bind(unix_server_fd, (struct sockaddr *)&unix_address, sizeof(unix_address)) < 0)
 			{
 				perror("Unix socket bind failed");
@@ -811,7 +811,7 @@ int run_unified_server(const char *port_str, const char *socket_path, const char
 			}
 			else
 			{
-				// Listen on Unix socket
+				// listen on unix socket
 				if (listen(unix_server_fd, SERVER_BACKLOG) < 0)
 				{
 					perror("Unix socket listen failed");
@@ -833,7 +833,7 @@ int run_unified_server(const char *port_str, const char *socket_path, const char
 		}
 	}
 
-	// Check if at least one socket was successfully created
+	// check if at least one socket was successfully created
 	if (tcp_server_fd < 0 && unix_server_fd < 0)
 	{
 		fprintf(stderr, "Failed to create any server sockets\n");
@@ -845,48 +845,48 @@ int run_unified_server(const char *port_str, const char *socket_path, const char
 		return -1;
 	}
 
-	// Initialize the thread pool
+	// initialize the thread pool
 	for (int i = 0; i < THREAD_POOL_SIZE; i++)
 	{
 		if (pthread_create(&thread_pool[i], NULL, thread_function, NULL) != 0)
 		{
 			perror("Failed to create thread");
-			// Continue with fewer threads
+			// continue with fewer threads
 		}
 	}
 
-	// File descriptor sets for select()
+	// file descriptor sets for select()
 	fd_set readfds;
 	int max_fd;
 
-	// Show initial prompt
+	// show initial prompt
 	prompt(true);
 
-	// Main server loop
+	// main server loop
 	while (server_running)
 	{
-		// Clear the file descriptor sets
+		// clear the file descriptor sets
 		FD_ZERO(&readfds);
 
-		// Add stdin to readfds
+		// add stdin to readfds
 		FD_SET(STDIN_FILENO, &readfds);
 		max_fd = STDIN_FILENO;
 
-		// Add TCP socket to readfds if it exists
+		// add tcp socket to readfds if it exists
 		if (tcp_server_fd >= 0)
 		{
 			FD_SET(tcp_server_fd, &readfds);
 			max_fd = (tcp_server_fd > max_fd) ? tcp_server_fd : max_fd;
 		}
 
-		// Add Unix socket to readfds if it exists
+		// add unix socket to readfds if it exists
 		if (unix_server_fd >= 0)
 		{
 			FD_SET(unix_server_fd, &readfds);
 			max_fd = (unix_server_fd > max_fd) ? unix_server_fd : max_fd;
 		}
 
-		// Wait for activity on any of the file descriptors
+		// wait for activity on any of the file descriptors
 		struct timeval tv;
 		tv.tv_sec = 1;
 		tv.tv_usec = 0;
@@ -898,13 +898,13 @@ int run_unified_server(const char *port_str, const char *socket_path, const char
 			break;
 		}
 
-		// Check for new TCP connections
+		// check for new tcp connections
 		if (tcp_server_fd >= 0 && FD_ISSET(tcp_server_fd, &readfds))
 		{
 			struct sockaddr_in client_addr;
 			socklen_t addrlen = sizeof(client_addr);
 
-			// Accept incoming connection
+			// accept incoming connection
 			int client_socket = accept(tcp_server_fd, (struct sockaddr *)&client_addr, &addrlen);
 			if (client_socket < 0)
 			{
@@ -923,7 +923,7 @@ int run_unified_server(const char *port_str, const char *socket_path, const char
 				}
 			}
 
-			// Add client to the queue for thread pool
+			// add client to the queue for thread pool
 			int *pclient = malloc(sizeof(int));
 			if (pclient == NULL)
 			{
@@ -941,13 +941,13 @@ int run_unified_server(const char *port_str, const char *socket_path, const char
 			}
 		}
 
-		// Check for new Unix socket connections
+		// check for new unix socket connections
 		if (unix_server_fd >= 0 && FD_ISSET(unix_server_fd, &readfds))
 		{
 			struct sockaddr_un client_addr;
 			socklen_t addrlen = sizeof(client_addr);
 
-			// Accept incoming connection
+			// accept incoming connection
 			int client_socket = accept(unix_server_fd, (struct sockaddr *)&client_addr, &addrlen);
 			if (client_socket < 0)
 			{
@@ -964,7 +964,7 @@ int run_unified_server(const char *port_str, const char *socket_path, const char
 				}
 			}
 
-			// Add client to the queue for thread pool
+			// add client to the queue for thread pool
 			int *pclient = malloc(sizeof(int));
 			if (pclient == NULL)
 			{
@@ -982,14 +982,14 @@ int run_unified_server(const char *port_str, const char *socket_path, const char
 			}
 		}
 
-		// Check if there's input from stdin
+		// check if there's input from stdin
 		if (FD_ISSET(STDIN_FILENO, &readfds))
 		{
 			char command[BUFFER_SIZE];
-			static char full_command[BUFFER_SIZE * 4] = {0}; // Larger buffer for multi-line commands
+			static char full_command[BUFFER_SIZE * 4] = {0}; // larger buffer for multi-line commands
 			static bool in_continuation = false;
 
-			// Read command
+			// read command
 			if (fgets(command, sizeof(command), stdin) == NULL)
 			{
 				// EOF or error
@@ -1003,7 +1003,7 @@ int run_unified_server(const char *port_str, const char *socket_path, const char
 				continue;
 			}
 
-			// Remove newline
+			// remove newline
 			size_t len = strlen(command);
 			if (len > 0 && command[len - 1] == '\n')
 			{
@@ -1011,41 +1011,41 @@ int run_unified_server(const char *port_str, const char *socket_path, const char
 				len--;
 			}
 
-			// Check for line continuation
+			// check for line continuation
 			if (len > 0 && command[len - 1] == '\\')
 			{
-				// Remove the backslash
+				// remove the backslash
 				command[len - 1] = '\0';
 
-				// Append this line to the full command
+				// append this line to the full command
 				if (in_continuation)
 				{
-					// Add space between continuation lines
+					// add space between continuation lines
 					strcat(full_command, " ");
 					strcat(full_command, command);
 				}
 				else
 				{
-					// First line of a multi-line command
+					// first line of a multi-line command
 					strcpy(full_command, command);
 					in_continuation = true;
 				}
 
-				// Show continuation prompt
+				// show continuation prompt
 				printf("> ");
 				fflush(stdout);
-				continue; // Continue reading more input
+				continue; // continue reading more input
 			}
 			else if (in_continuation)
 			{
-				// Last line of a multi-line command - append it
+				// last line of a multi-line command - append it
 				strcat(full_command, " ");
 				strcat(full_command, command);
 
-				// Use the complete multi-line command
+				// use the complete multi-line command
 				strcpy(command, full_command);
 
-				// Log the complete multi-line command
+				// log the complete multi-line command
 				if (log_file_ptr && strlen(command) > 0)
 				{
 					log_message("Server console command: %s\n", command);
@@ -1056,7 +1056,7 @@ int run_unified_server(const char *port_str, const char *socket_path, const char
 			}
 			else
 			{
-				// Regular single-line command - log it normally
+				// regular single-line command - log it normally
 				if (log_file_ptr && strlen(command) > 0)
 				{
 					log_message("Server console command: %s\n", command);
@@ -1064,10 +1064,10 @@ int run_unified_server(const char *port_str, const char *socket_path, const char
 			}
 
 			int tmp_prompt = 0;
-			// Process command only if non-empty
+			// process command only if non-empty
 			if (strlen(command) > 0)
 			{
-				// Create pipe for capturing command output
+				// create pipe for capturing command output
 				int pipes[2];
 				if (pipe(pipes) < 0)
 				{
@@ -1076,16 +1076,16 @@ int run_unified_server(const char *port_str, const char *socket_path, const char
 					continue;
 				}
 
-				// Save stdout and stderr
+				// save stdout and stderr
 				int stdout_backup = dup(STDOUT_FILENO);
 				int stderr_backup = dup(STDERR_FILENO);
 
-				// Redirect stdout and stderr to the pipe
+				// redirect stdout and stderr to the pipe
 				dup2(pipes[1], STDOUT_FILENO);
 				dup2(pipes[1], STDERR_FILENO);
-				close(pipes[1]); // Close write end of pipe
+				close(pipes[1]); // close write end of pipe
 
-				// Create a copy of the command for processing
+				// create a copy of the command for processing
 				char *cmd_copy = strdup(command);
 				if (!cmd_copy)
 				{
@@ -1099,29 +1099,29 @@ int run_unified_server(const char *port_str, const char *socket_path, const char
 					continue;
 				}
 
-				// Handle comments (ignore everything after #)
+				// handle comments (ignore everything after #)
 				char *comment = strchr(cmd_copy, '#');
 				if (comment)
 				{
 					*comment = '\0';
 				}
 
-				// Handle command separators (;)
+				// handle command separators (;)
 				char *cmd_part = strtok(cmd_copy, ";");
 				while (cmd_part != NULL && server_running)
 				{
-					// Handle redirection (>)
+					// handle redirection (>)
 					char *redirect = strchr(cmd_part, '>');
 					if (redirect)
 					{
-						*redirect = '\0'; // Split the command at '>'
-						redirect++;		  // Move to the filename
+						*redirect = '\0'; // split the command at '>'
+						redirect++;		  // move to the filename
 
-						// Skip leading whitespace
+						// skip leading whitespace
 						while (*redirect == ' ' || *redirect == '\t')
 							redirect++;
 
-						// Get the filename
+						// get the filename
 						char filename[256] = {0};
 						sscanf(redirect, "%255s", filename);
 
@@ -1145,7 +1145,7 @@ int run_unified_server(const char *port_str, const char *socket_path, const char
 					}
 					else
 					{
-						// Regular command execution
+						// regular command execution
 						int result = execute_command(cmd_part, false, -1);
 						if (result == -1 || result == -2)
 						{
@@ -1153,23 +1153,23 @@ int run_unified_server(const char *port_str, const char *socket_path, const char
 						}
 					}
 
-					// Get next command part
+					// get next command part
 					cmd_part = strtok(NULL, ";");
 				}
 
 				free(cmd_copy);
 
-				// Flush output
+				// flush output
 				fflush(stdout);
 				fflush(stderr);
 
-				// Restore stdout and stderr
+				// restore stdout and stderr
 				dup2(stdout_backup, STDOUT_FILENO);
 				dup2(stderr_backup, STDERR_FILENO);
 				close(stdout_backup);
 				close(stderr_backup);
 
-				// Read command output using dynamic buffer with getline
+				// read command output using dynamic buffer with getline
 				FILE *pipe_stream = fdopen(pipes[0], "r");
 				if (!pipe_stream)
 				{
@@ -1179,7 +1179,7 @@ int run_unified_server(const char *port_str, const char *socket_path, const char
 					continue;
 				}
 
-				// Use dynamic buffer with getline to read all output
+				// use dynamic buffer with getline to read all output
 				char *output_line = NULL;
 				size_t line_buf_size = 0;
 				ssize_t line_length;
@@ -1188,7 +1188,7 @@ int run_unified_server(const char *port_str, const char *socket_path, const char
 
 				while ((line_length = getline(&output_line, &line_buf_size, pipe_stream)) != -1)
 				{
-					// Allocate/reallocate combined output buffer
+					// allocate/reallocate combined output buffer
 					char *new_complete = realloc(complete_output, total_size + line_length + 1);
 					if (!new_complete)
 					{
@@ -1197,39 +1197,39 @@ int run_unified_server(const char *port_str, const char *socket_path, const char
 					}
 					complete_output = new_complete;
 
-					// Copy new line to the end of complete output
+					// copy new line to the end of complete output
 					memcpy(complete_output + total_size, output_line, line_length);
 					total_size += line_length;
 					complete_output[total_size] = '\0';
 				}
 
-				// Clean up the line buffer
+				// clean up the line buffer
 				free(output_line);
-				fclose(pipe_stream); // This also closes pipes[0]
+				fclose(pipe_stream); // this also closes pipes[0]
 
-				// Print the output
+				// print the output
 				if (complete_output && total_size > 0)
 				{
 					printf("%s", complete_output);
 
-					// Add newline if output doesn't end with one
+					// add newline if output doesn't end with one
 					if (total_size > 0 && complete_output[total_size - 1] != '\n')
 					{
 						printf("\n");
 					}
 				}
 
-				// Free the complete output buffer
+				// free the complete output buffer
 				free(complete_output);
 
-				// Handle halt or quit command
+				// handle halt or quit command
 				if (tmp_prompt == -1 || tmp_prompt == -2)
 				{
 					server_running = 0;
 				}
 			}
 
-			// Show prompt after command execution if not shutting down
+			// show prompt after command execution if not shutting down
 			if (server_running)
 			{
 				prompt(true);
@@ -1237,10 +1237,10 @@ int run_unified_server(const char *port_str, const char *socket_path, const char
 		}
 	}
 
-	// Shutdown procedure
+	// shutdown procedure
 	printf("Shutting down server...\n");
 
-	// Close all server sockets
+	// close all server sockets
 	if (tcp_server_fd >= 0)
 	{
 		close(tcp_server_fd);
@@ -1249,7 +1249,7 @@ int run_unified_server(const char *port_str, const char *socket_path, const char
 	if (unix_server_fd >= 0)
 	{
 		close(unix_server_fd);
-		// Remove Unix socket file
+		// remove unix socket file
 		if (socket_path != NULL)
 		{
 			unlink(socket_path);
@@ -1258,7 +1258,7 @@ int run_unified_server(const char *port_str, const char *socket_path, const char
 
 	if (server_running)
 	{
-		// Normal shutdown - wait for threads
+		// normal shutdown - wait for threads
 		for (int i = 0; i < THREAD_POOL_SIZE; i++)
 		{
 			pthread_cond_broadcast(&queue_cond_var);
@@ -1271,14 +1271,14 @@ int run_unified_server(const char *port_str, const char *socket_path, const char
 	}
 	else
 	{
-		// Halt command received - force immediate shutdown
+		// halt command received - force immediate shutdown
 		for (int i = 0; i < THREAD_POOL_SIZE; i++)
 		{
-			pthread_cancel(thread_pool[i]); // Cancel threads immediately
+			pthread_cancel(thread_pool[i]); // cancel threads immediately
 		}
 	}
 
-	// Close log file if it was opened
+	// close log file if it was opened
 	if (log_file_ptr)
 	{
 		log_message("Server shutting down\n");
@@ -1289,45 +1289,50 @@ int run_unified_server(const char *port_str, const char *socket_path, const char
 	return 0;
 }
 
-// Unified client function
+// unified client function (unified means for both tcp and unix sockets)
 int run_unified_client(const char *port_str, const char *socket_path, const char *ip_address, bool verbose)
 {
 	int sock = -1;
 	char buffer[BUFFER_SIZE] = {0};
 
-	// Set terminal to raw mode
+	// set terminal to raw mode
+	// setup for terminal where backspace and other special characters are handled
 	struct termios oldattr;
 	tcgetattr(STDIN_FILENO, &oldattr);
 	struct termios newattr = oldattr;
 	newattr.c_lflag &= ~(ICANON | ECHO);
 	tcsetattr(STDIN_FILENO, TCSANOW, &newattr);
 
-	// Try to connect using Unix socket if specified
+	// try to connect using unix socket if specified
 	if (socket_path != NULL && strlen(socket_path) > 0)
 	{
 		struct sockaddr_un address;
 
-		// Create Unix socket
+		// create unix socket
 		if ((sock = socket(AF_UNIX, SOCK_STREAM, 0)) < 0)
 		{
 			perror("Unix socket creation error");
-			tcsetattr(STDIN_FILENO, TCSANOW, &oldattr); // Restore terminal
-			return -1;									// Don't fall back to TCP if Unix socket was explicitly requested
+			// restore terminal
+			tcsetattr(STDIN_FILENO, TCSANOW, &oldattr);
+			// don't fall back to tcp if unix socket was explicitly requested
+			return -1;
 		}
 		else
 		{
-			// Set up Unix address
+			// set up unix address
 			memset(&address, 0, sizeof(struct sockaddr_un));
 			address.sun_family = AF_UNIX;
 			strncpy(address.sun_path, socket_path, sizeof(address.sun_path) - 1);
 
-			// Connect to server
+			// connect to server
 			if (connect(sock, (struct sockaddr *)&address, sizeof(struct sockaddr_un)) < 0)
 			{
 				perror("Unix socket connection failed");
 				close(sock);
-				tcsetattr(STDIN_FILENO, TCSANOW, &oldattr); // Restore terminal
-				return -1;									// Don't fall back to TCP if Unix socket was explicitly requested
+				// restore terminal
+				tcsetattr(STDIN_FILENO, TCSANOW, &oldattr);
+				// don't fall back to tcp if unix socket was explicitly requested
+				return -1;
 			}
 			else if (verbose)
 			{
@@ -1336,41 +1341,45 @@ int run_unified_client(const char *port_str, const char *socket_path, const char
 		}
 	}
 
-	// If Unix socket connection wasn't specified, try TCP
+	// if unix socket connection wasn't specified, try tcp
 	if (sock < 0)
 	{
 		struct sockaddr_in serv_addr;
 
-		// Default values
-		const char *server_addr = ip_address ? ip_address : "127.0.0.1";
-		int port = port_str ? atoi(port_str) : SERVER_PORT;
+		// default values
+		const char *server_addr = ip_address ? ip_address : DEFAULT_IP_ADDRESS;
+		int port = port_str ? atoi(port_str) : DEFAULT_SERVER_PORT;
 
-		// Create TCP socket
+		// create tcp socket
 		if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0)
 		{
 			perror("Socket creation error");
-			tcsetattr(STDIN_FILENO, TCSANOW, &oldattr); // Restore terminal
+			// restore terminal
+			tcsetattr(STDIN_FILENO, TCSANOW, &oldattr);
 			return -1;
 		}
 
+		// set up tcp address
 		serv_addr.sin_family = AF_INET;
 		serv_addr.sin_port = htons(port);
 
-		// Convert IPv4 address from text to binary form
+		// convert ipv4 address from text to binary form
 		if (inet_pton(AF_INET, server_addr, &serv_addr.sin_addr) <= 0)
 		{
-			perror("Invalid address/ Address not supported");
+			perror("Invalid address / Address not supported");
 			close(sock);
-			tcsetattr(STDIN_FILENO, TCSANOW, &oldattr); // Restore terminal
+			// restore terminal
+			tcsetattr(STDIN_FILENO, TCSANOW, &oldattr);
 			return -1;
 		}
 
-		// Connect to server
+		// connect to server
 		if (connect(sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0)
 		{
 			perror("Connection Failed");
 			close(sock);
-			tcsetattr(STDIN_FILENO, TCSANOW, &oldattr); // Restore terminal
+			// restore terminal
+			tcsetattr(STDIN_FILENO, TCSANOW, &oldattr);
 			return -1;
 		}
 
@@ -1384,16 +1393,17 @@ int run_unified_client(const char *port_str, const char *socket_path, const char
 	char current_cmd[BUFFER_SIZE] = {0};
 	int cursor_pos = 0;
 
-	// Main client loop
+	// main client loop
 	while (1)
 	{
+		// setup file descriptors
 		FD_ZERO(&readfds);
 		FD_SET(STDIN_FILENO, &readfds);
 		FD_SET(sock, &readfds);
 
 		int max_fd = (STDIN_FILENO > sock) ? STDIN_FILENO : sock;
 
-		// Wait for activity on stdin or socket
+		// wait for activity on stdin or socket
 		int activity = select(max_fd + 1, &readfds, NULL, NULL, NULL);
 
 		if (activity < 0)
@@ -1404,7 +1414,7 @@ int run_unified_client(const char *port_str, const char *socket_path, const char
 			break;
 		}
 
-		// Check if server has sent data
+		// check if server has sent data
 		if (FD_ISSET(sock, &readfds))
 		{
 			memset(buffer, 0, sizeof(buffer));
@@ -1419,16 +1429,16 @@ int run_unified_client(const char *port_str, const char *socket_path, const char
 				break;
 			}
 
-			buffer[bytes_read] = '\0'; // Ensure null termination
+			buffer[bytes_read] = '\0'; // ensure null termination
 
-			// Print server response
+			// print server response
 			printf("%s", buffer);
 
-			// Make sure output is flushed
+			// make sure output is flushed
 			fflush(stdout);
 		}
 
-		// Check if user has entered data
+		// check if user has entered data
 		if (FD_ISSET(STDIN_FILENO, &readfds))
 		{
 			char ch;
@@ -1436,31 +1446,48 @@ int run_unified_client(const char *port_str, const char *socket_path, const char
 			{
 				if (ch == '\n')
 				{
-					// Echo the newline to terminal
+					// echo the newline to terminal
 					printf("\n");
 
-					// Check if the command ends with a continuation character
+					// check if the command ends with a continuation character
 					bool needs_continuation = false;
 					if (cursor_pos > 0 && current_cmd[cursor_pos - 1] == '\\')
 					{
-						// This is a continuation - don't send the command yet
+						// this is a continuation - don't send the command yet
 						needs_continuation = true;
 
-						// Remove the backslash from the command
+						// remove the backslash from the command
 						current_cmd[--cursor_pos] = '\0';
 
-						// Show continuation prompt to the client
+						// show continuation prompt to the client
 						printf("> ");
 						fflush(stdout);
 					}
 
 					if (!needs_continuation)
 					{
-						// Send the complete command to the server
+						// send the complete command to the server
 						current_cmd[cursor_pos] = '\n';
-						write(sock, current_cmd, cursor_pos + 1);
 
-						// Check for quit command
+						/* TODO: TEMPORARY TEST FOR QUITING*/
+						/* put the write after the if statement*/
+
+						// write(sock, current_cmd, cursor_pos + 1);
+
+						// // check for quit command
+						// if (strncmp(current_cmd, "quit", 4) == 0)
+						// {
+						// 	if (verbose)
+						// 	{
+						// 		printf("Quitting client...\n");
+						// 	}
+						// 	break;
+						// }
+
+						
+
+
+						// check for quit command
 						if (strncmp(current_cmd, "quit", 4) == 0)
 						{
 							if (verbose)
@@ -1469,29 +1496,32 @@ int run_unified_client(const char *port_str, const char *socket_path, const char
 							}
 							break;
 						}
+						
+						write(sock, current_cmd, cursor_pos + 1);
 
-						// Reset command buffer
+
+
+						// reset command buffer
 						memset(current_cmd, 0, sizeof(current_cmd));
 						cursor_pos = 0;
 					}
 				}
-				else if (ch == 127 || ch == '\b')
-				{ // Backspace
+				else if (ch == 127 || ch == '\b') // backspace
+				{
 					if (cursor_pos > 0)
 					{
 						cursor_pos--;
 						current_cmd[cursor_pos] = '\0';
-						printf("\b \b"); // Erase character from terminal
+						printf("\b \b"); // erase character from terminal
 						fflush(stdout);
 					}
 				}
-				else if (isprint(ch))
+				else if (isprint(ch)) // add character to command
 				{
-					// Add character to command
-					if (cursor_pos < BUFFER_SIZE - 2)
-					{ // Leave room for \n\0
+					if (cursor_pos < BUFFER_SIZE - 2) // leave room for \n\0
+					{ 
 						current_cmd[cursor_pos++] = ch;
-						printf("%c", ch); // Echo character
+						printf("%c", ch); // print the character
 						fflush(stdout);
 					}
 				}
@@ -1499,14 +1529,13 @@ int run_unified_client(const char *port_str, const char *socket_path, const char
 		}
 	}
 
-	// Restore terminal settings
+	// restore terminal settings
 	tcsetattr(STDIN_FILENO, TCSANOW, &oldattr);
 
 	close(sock);
 	return 0;
 }
 
-// Main function
 int main(int argc, char **argv)
 {
 	int c;
@@ -1518,7 +1547,7 @@ int main(int argc, char **argv)
 	bool c_flag, s_flag, v_flag;
 	c_flag = s_flag = v_flag = false;
 
-	// Check for standalone -help, -halt, -quit options
+	// check for standalone -help, -halt, -quit options
 	for (index = 1; index < argc; index++)
 	{
 		if (strcmp(argv[index], "-halt") == 0)
@@ -1559,17 +1588,16 @@ int main(int argc, char **argv)
 	{
 		switch (c)
 		{
-		case 'h':
+		case 'h': // help
 			help();
 			return 0;
-		case 'q': // quit command
+		case 'q': // quit
 			printf("Quitting the shell...\n");
 			return 0;
-		case 'x': // halt command
+		case 'x': // halt
 			printf("Halting the server...\n");
 			return 0;
-		case 'p':
-			// set port
+		case 'p': // set port
 			p_value = optarg;
 			if (optarg != NULL && v_flag)
 			{
@@ -1586,45 +1614,39 @@ int main(int argc, char **argv)
 				}
 			}
 			break;
-		case 'u':
-			// set socket
+		case 'u': // set socket
 			u_value = optarg;
 			if (optarg != NULL && v_flag)
 			{
 				printf("Socket: %s\n", u_value);
 			}
 			break;
-		case 'c':
-			// run as client
+		case 'c': // run as client
 			c_flag = true;
 			if (v_flag)
 			{
 				printf("Running as client\n");
 			}
 			break;
-		case 's':
-			// run as server
+		case 's': // run as server
 			s_flag = true;
 			if (v_flag)
 			{
 				printf("Running as server\n");
 			}
 			break;
-		case 'i':
-			// set IP
+		case 'i': // set ip
 			i_value = optarg;
 			if (optarg != NULL && v_flag)
 			{
 				printf("IP: %s\n", i_value);
 			}
 			break;
-		case 'v':
-			// verbose output (show debug info)
+		case 'v': // verbose output (show debug info)
 			v_flag = true;
 			printf("Verbose mode enabled\n");
 			break;
-		case 'l':
-			// write logs to a file
+		case 'l': // write logs to a file
 			l_value = optarg;
 			if (optarg != NULL && v_flag)
 			{
@@ -1651,7 +1673,7 @@ int main(int argc, char **argv)
 		}
 	}
 
-	// Check for any unknown arguments
+	// check for any unknown arguments
 	if (optind < argc)
 	{
 		printf("Unknown arguments:");
@@ -1663,7 +1685,7 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
-	// Check if c_flag and s_flag are set at the same time
+	// server and client cannot be set at the same time
 	if (c_flag && s_flag)
 	{
 		fprintf(stderr, "Error: Cannot run as client and server at the same time\n");
@@ -1676,26 +1698,15 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
-	if (s_flag && l_value != NULL)
-	{
-		// Open log file for writing
-		log_file_ptr = fopen(l_value, "a");
-		if (log_file_ptr == NULL)
-		{
-			fprintf(stderr, "Error opening log file: %s\n", l_value);
-			return 1;
-		}
-	}
-
-	// Run in the appropriate mode
+	// run in the appropriate mode (default: server)
 	if (c_flag)
 	{
-		// Run as client
+		// run as client
 		return run_unified_client(p_value, u_value, i_value, v_flag);
 	}
 	else
 	{
-		// Run as server (default if no mode specified)
+		// run as server (default if no mode specified)
 		return run_unified_server(p_value, u_value, i_value, v_flag, l_value);
 	}
 }
