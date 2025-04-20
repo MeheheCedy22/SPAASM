@@ -22,6 +22,7 @@
 #include <termios.h>
 #include <sys/ioctl.h>
 #include <sys/un.h>
+#include <stdarg.h>
 #include "custom_queue.h"
 
 /* THESE ARE THE MAIN TASKS WHICH ARE MANDATORY */
@@ -68,6 +69,9 @@
 // Flag for server shutdown
 volatile sig_atomic_t server_running = 1;
 
+// Global log file pointer
+FILE *log_file_ptr = NULL;
+
 // Thread pool and synchronization primitives
 pthread_t thread_pool[THREAD_POOL_SIZE];
 pthread_mutex_t queue_mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -81,6 +85,7 @@ typedef struct prompt_data {
 
 
 // Function prototypes
+void log_message(const char *format, ...);
 void help();
 prompt_data_t prompt(bool print);
 int run_unified_server(const char *port_str, const char *socket_path, const char *ip_address, bool verbose, const char *log_file);
@@ -91,6 +96,29 @@ void sigchld_handler(int s);
 void handle_shutdown(int sig);
 void setup_signal_handlers();
 void* thread_function(void* arg);
+
+// Function to log messages
+void log_message(const char *format, ...) {
+	if (!log_file_ptr) return;
+	
+	// Get current timestamp
+	time_t now = time(NULL);
+	struct tm *tm_info = localtime(&now);
+	char timestamp[20];
+	strftime(timestamp, sizeof(timestamp), "%Y-%m-%d %H:%M:%S", tm_info);
+	
+	// Write timestamp to log
+	fprintf(log_file_ptr, "[%s] ", timestamp);
+	
+	// Write message with variable arguments
+	va_list args;
+	va_start(args, format);
+	vfprintf(log_file_ptr, format, args);
+	va_end(args);
+	
+	// Ensure log is written immediately
+	fflush(log_file_ptr);
+}
 
 // Signal handler to prevent zombie processes
 void sigchld_handler(int s) {
@@ -295,6 +323,25 @@ void handle_client(int client_socket) {
 	ssize_t bytes_read;
 	int pipes[2];  // For capturing command output
 	
+	// Get client address info for logging
+	struct sockaddr_storage client_addr;
+	socklen_t addr_len = sizeof(client_addr);
+	char client_info[50] = "unknown";
+	
+	// Try to get client information
+	if (getpeername(client_socket, (struct sockaddr*)&client_addr, &addr_len) == 0) {
+		if (client_addr.ss_family == AF_INET) {
+			// IPv4 client
+			struct sockaddr_in *s = (struct sockaddr_in*)&client_addr;
+			char ip_str[INET_ADDRSTRLEN];
+			inet_ntop(AF_INET, &s->sin_addr, ip_str, sizeof(ip_str));
+			snprintf(client_info, sizeof(client_info), "%s:%d", ip_str, ntohs(s->sin_port));
+		} else if (client_addr.ss_family == AF_UNIX) {
+			// Unix domain socket client
+			strcpy(client_info, "unix-socket");
+		}
+	}
+	
 	// Send initial welcome message
 	const char *welcome_msg = "Connected to shell server. Type commands or 'quit' to exit.\n";
 	send(client_socket, welcome_msg, strlen(welcome_msg), 0);
@@ -318,6 +365,11 @@ void handle_client(int client_socket) {
 		// Remove newline character if present
 		if (bytes_read > 0 && buffer[bytes_read - 1] == '\n') {
 			buffer[bytes_read - 1] = '\0';
+		}
+
+		// Log the received command
+		if (log_file_ptr) {
+			log_message("Client [%s] command: %s\n", client_info, buffer);
 		}
 		
 		// Process the command
@@ -547,8 +599,11 @@ int run_unified_server(const char *port_str, const char *socket_path, const char
 						perror("TCP socket listen failed");
 						close(tcp_server_fd);
 						tcp_server_fd = -1;
-					} else if (verbose) {
-						printf("Server listening on TCP port %d\n", port);
+					} else {
+						if (verbose) {
+							printf("Server listening on TCP port %d\n", port);
+						}
+						log_message("TCP server listening on port %d\n", port);
 					}
 				}
 			}
@@ -580,8 +635,11 @@ int run_unified_server(const char *port_str, const char *socket_path, const char
 					perror("Unix socket listen failed");
 					close(unix_server_fd);
 					unix_server_fd = -1;
-				} else if (verbose) {
-					printf("Server listening on Unix socket: %s\n", socket_path);
+				} else {
+					if (verbose) {
+						printf("Server listening on Unix socket: %s\n", socket_path);
+					}
+					log_message("Unix domain socket server listening on: %s\n", socket_path);
 				}
 			}
 		}
@@ -693,8 +751,20 @@ int run_unified_server(const char *port_str, const char *socket_path, const char
 				
 				// Use the complete multi-line command
 				strcpy(command, full_command);
+				
+				// Log the complete multi-line command
+				if (log_file_ptr && strlen(command) > 0) {
+					log_message("Server console command: %s\n", command);
+				}
+				
 				in_continuation = false;
 				memset(full_command, 0, sizeof(full_command));
+			}
+			else {
+				// Regular single-line command - log it normally
+				if (log_file_ptr && strlen(command) > 0) {
+					log_message("Server console command: %s\n", command);
+				}
 			}
 			
 			int tmp_prompt = 0;
@@ -830,6 +900,7 @@ int run_unified_server(const char *port_str, const char *socket_path, const char
 				char client_ip[INET_ADDRSTRLEN];
 				inet_ntop(AF_INET, &client_addr.sin_addr, client_ip, INET_ADDRSTRLEN);
 				printf("Client connected from %s:%d\n", client_ip, ntohs(client_addr.sin_port));
+				log_message("Client connected from %s:%d\n", client_ip, ntohs(client_addr.sin_port));
 			}
 			
 			// Allocate memory for client socket
@@ -862,6 +933,7 @@ int run_unified_server(const char *port_str, const char *socket_path, const char
 			
 			if (verbose) {
 				printf("Client connected on Unix socket\n");
+				log_message("Client connected on Unix socket\n");
 			}
 			
 			// Allocate memory for client socket
@@ -908,6 +980,13 @@ int run_unified_server(const char *port_str, const char *socket_path, const char
 	
 	if (verbose) {
 		printf("Server shut down successfully\n");
+	}
+
+	// Close log file if it was opened
+	if (log_file_ptr) {
+		log_message("Server shutting down\n");
+		fclose(log_file_ptr);
+		log_file_ptr = NULL;
 	}
 	
 	return 0;
@@ -1247,6 +1326,20 @@ int main(int argc, char **argv)
 	{
 		fprintf(stderr, "Error: Cannot run as client and server at the same time\n");
 		return 1;
+	}
+
+	if (c_flag && l_value != NULL) {
+		fprintf(stderr, "Error: Cannot use log file with client mode\n");
+		return 1;
+	}
+
+	if (s_flag && l_value != NULL) {
+		// Open log file for writing
+		log_file_ptr = fopen(l_value, "a");
+		if (log_file_ptr == NULL) {
+			fprintf(stderr, "Error opening log file: %s\n", l_value);
+			return 1;
+		}
 	}
 
 	// Run in the appropriate mode
