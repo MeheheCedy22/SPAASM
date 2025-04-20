@@ -1476,24 +1476,6 @@ int run_unified_client(const char *port_str, const char *socket_path, const char
 						// send the complete command to the server
 						current_cmd[cursor_pos] = '\n';
 
-						/* TODO: TEMPORARY TEST FOR QUITING*/
-						/* put the write after the if statement*/
-
-						// write(sock, current_cmd, cursor_pos + 1);
-
-						// // check for quit command
-						// if (strncmp(current_cmd, "quit", 4) == 0)
-						// {
-						// 	if (verbose)
-						// 	{
-						// 		printf("Quitting client...\n");
-						// 	}
-						// 	break;
-						// }
-
-						
-
-
 						// check for quit command
 						if (strncmp(current_cmd, "quit", 4) == 0)
 						{
@@ -1505,8 +1487,6 @@ int run_unified_client(const char *port_str, const char *socket_path, const char
 						}
 						
 						write(sock, current_cmd, cursor_pos + 1);
-
-
 
 						// reset command buffer
 						memset(current_cmd, 0, sizeof(current_cmd));
