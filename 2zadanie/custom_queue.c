@@ -4,6 +4,7 @@
 node_t* g_queue_head = NULL;
 node_t* g_queue_tail = NULL;
 
+// pushes a client socket to the end of the queue
 void enqueue(int *client_socket) {
 	node_t* new_node = (node_t*)malloc(sizeof(node_t));
 	new_node->m_client_socket = client_socket;
