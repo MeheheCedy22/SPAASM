@@ -52,16 +52,16 @@ tmux send-keys -t shell_test:0.0 'watch -n 1 "ps aux | head -1; ps aux | grep sh
 tmux send-keys -t shell_test:0.1 'watch -n 1 "lsof -i | head -1; lsof -i | grep shell"' C-m
 
 # Pane 3 (bottom left) - start server
-tmux send-keys -t shell_test:0.2 './shell -s -v -l out.log -p 6060 -u /tmp/sock' C-m
+tmux send-keys -t shell_test:0.2 './shell -v -s -l out.log -p 6060 -u /tmp/sock' C-m
 
 # Wait for the server to start
 sleep 1
 
 # Pane 4 (top right) - start client (network socket)
-tmux send-keys -t shell_test:0.3 './shell -c -v -p 6060' C-m
+tmux send-keys -t shell_test:0.3 './shell -v -c -p 6060' C-m
 
 # Pane 5 (middle right) - start client (unix domain socket)
-tmux send-keys -t shell_test:0.4 './shell -c -v -u /tmp/sock' C-m
+tmux send-keys -t shell_test:0.4 './shell -v -c -u /tmp/sock' C-m
 
 # Pane 6 (bottom right) - watch log file
 tmux send-keys -t shell_test:0.5 'watch -n 1 "tail -10 out.log"' C-m
