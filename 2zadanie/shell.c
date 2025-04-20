@@ -184,7 +184,7 @@ void help()
 	printf("About: Simple interactive shell written in C using client-server architecture.\n");
 	printf("Usage: ./shell [OPTIONS]\n");
 	printf("Options:\n");
-	printf("  -h, --help \tShow this help message and exit\n");
+	printf("  -h \tShow this help message and exit\n");
 	printf("  -p PORT \tSet the port number\n");
 	printf("  -u SOCKET \tSet the socket\n");
 	printf("  -c \tRun as client, sends to default port 60069\n");
