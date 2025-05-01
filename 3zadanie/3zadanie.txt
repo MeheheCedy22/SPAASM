@@ -1,3 +1,79 @@
 8 charov dlhe: FIITgeek
 zistenie pomocou tych dvoch funkcii v screenshote
 funckia kopiruje znaky na urcitych poziiciac ha vsyklada tento answer string
+
+to co napisem sa napise za tie 2 stringy kde su same nul chary a je tam volne miesto a potom tam jeedna funckia kde ide parameter '8' tak ta porovnava to co je v EBX s tym miestom pricom v EBX je return value z tej funckie ktora kopiruje veci z velkeho stringu do toho co ma 8 characterov a ta return value sa dostane do EBX vec instruckiu ze MOVE EBX,AL
+
+
+I4561AsEmblerySuPOhodicka2x3XzgvwpqLJfBCDnFMH90KNG78QRtTUVWjYZ (dlzka 62, cize na var[offset] if offset = 62 (0x3e) tak tam je null char)
+
+
+      (OFFSET vo velkom stringu)
+char    dec     hex
+M       43      0x2b
+a       24      0x18
+r       12      0xc
+e       11      0xb
+k       23      0x17
+\0      62      0x3e
+
+- final riesenie -> Marek
+- na 3 miestach zmenene miesto cisla 8 cislo 5 ako velkost tohos stringu
+    - return value funkcie kde sa to kopiruje
+    - potom v if condition v hlavnej funkcii
+    - a potom argument v porovnavacej funkcii
+- inak zmenen offsety v kopirovacej funkcii a potom pridane nopy aby sedeli instrukcie
+
+Kopirovacia funkcia + return value:
+================================= POVODVNE =============================|================================= NOVE =================================|
+00401146 55              PUSH        EBP                                |   00401146 55              PUSH       EBP                              |
+00401147 8b  ec           MOV        EBP ,ESP                           |   00401147 8b ec           MOV        EBP,ESP                          |
+00401149 56              PUSH        ESI                                |   00401149 56              PUSH       ESI                              |
+0040114a 57              PUSH        EDI                                |   0040114a 57              PUSH       EDI                              |
+0040114b 33  c0           XOR        EAX ,EAX                           |   0040114b 33 c0           XOR        EAX,EAX                          |
+0040114d 8b  75  08       MOV        ESI ,dword ptr [EBP + param_1]     |   0040114d 8b 75 08        MOV        ESI,dword ptr [EBP + param_1]    |
+00401150 8b  7d  0c       MOV        EDI ,dword ptr [EBP + param_2]     |   00401150 8b 7d 0c        MOV        EDI,dword ptr [EBP + param_2]    |
+00401153 8a  46  2a       MOV        AL ,byte ptr [ESI + 0x2a]          |   00401153 8a 46 2b        MOV        AL,byte ptr [ESI + 0x2b]         |
+00401156 88  07           MOV        byte ptr [EDI],AL                  |   00401156 88 07           MOV        byte ptr [EDI],AL                |
+00401158 8a  06           MOV        AL ,byte ptr [ESI]                 |   00401158 8a 46 18        MOV        AL,byte ptr [ESI + 0x18]         |
+0040115a 88  47  01       MOV        byte ptr [EDI + 0x1],AL            |   0040115b 88 47 01        MOV        byte ptr [EDI + 0x1],AL          |
+0040115d 8a  46  00       MOV        AL ,byte ptr [ESI]                 |   0040115e 8a 46 0c        MOV        AL,byte ptr [ESI + 0xc]          |
+00401160 88  47  02       MOV        byte ptr [EDI + 0x2],AL            |   00401161 88 47 02        MOV        byte ptr [EDI + 0x2],AL          |
+00401163 8a  46  37       MOV        AL ,byte ptr [ESI + 0x37]          |   00401164 8a 46 0b        MOV        AL,byte ptr [ESI + 0xb]          |
+00401166 88  47  03       MOV        byte ptr [EDI + 0x3],AL            |   00401167 88 47 03        MOV        byte ptr [EDI + 0x3],AL          |
+00401169 8a  46  1e       MOV        AL ,byte ptr [ESI + 0x1e]          |   0040116a 8a 46 17        MOV        AL,byte ptr [ESI + 0x17]         |
+0040116c 88  47  04       MOV        byte ptr [EDI + 0x4],AL            |   0040116d 88 47 04        MOV        byte ptr [EDI + 0x4],AL          |
+0040116f 8a  46  0b       MOV        AL ,byte ptr [ESI + 0xb]           |   00401170 8a 46 3e        MOV        AL,byte ptr [ESI + 0x3e]         |
+00401172 88  47  05       MOV        byte ptr [EDI + 0x5],AL            |   00401173 88 47 05        MOV        byte ptr [EDI + 0x5],AL          |
+00401175 8a  46  0b       MOV        AL ,byte ptr [ESI + 0xb]           |   00401177 90              NOP                                         |
+00401178 88  47  06       MOV        byte ptr [EDI + 0x6],AL            |   ...                      NOP                                         |
+0040117b 8a  46  17       MOV        AL ,byte ptr [ESI + 0x17]          |   0040117f 90              NOP                                         |
+0040117e 88  47  07       MOV        byte ptr [EDI + 0x7],AL            |   00401180 90              NOP                                         |
+00401181 8b  c7           MOV        EAX ,EDI                           |   00401181 8b c7           MOV        EAX,EDI                          |
+00401183 5f               POP        EDI                                |   00401183 5f              POP        EDI                              |
+00401184 5e               POP        ESI                                |   00401184 5e              POP        ESI                              |
+00401185 c9              LEAVE                                          |   00401185 c9              LEAVE                                       |
+00401186 c2  08  00       RET        0x8                                |   00401186 c2 05 00        RET        0x5                              |
+========================================================================|========================================================================|
+
+if condition:
+======================= POVODVNE =======================|======================= NOVE =======================|
+0040109d 83 f8 08        CMP        EAX,0x8             |       0040109d 83 f8 05        CMP        EAX,0x5  |
+========================================================|====================================================|
+
+argument dalsej funckie:
+==================== POVODVNE ====================|======================= NOVE =======================|
+004010ba b8 08 00        MOV        EAX,0x8       |       004010ba b8 05 00        MOV        EAX,0x5  |
+         00 00                                    |                00 00                               |
+==================================================|====================================================|
+
+
+
+
+=================== REALNE ODPOVEDE A VYPRACOVANIE ===================
+- 
+- 
+- 
+- 
+- posledny bod:
+    - najskor som skusal to napasovat s instrukciami tak ze pomenim iba offsety ale to sa mi nedarilo tak som potom zvolil tuto moznost
