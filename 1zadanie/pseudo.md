@@ -1,4 +1,4 @@
-# Pseudokod na jadro programu
+# Pseudocode for main functionality of the program
 Note: This is nearly the same as the main code, but with some small changes that I made directly in the code so I don't have to write it here again
 
 data segment:
