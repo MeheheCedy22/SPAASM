@@ -1,36 +1,79 @@
-8 charov dlhe: FIITgeek
-zistenie pomocou tych dvoch funkcii v screenshote
-funckia kopiruje znaky na urcitych poziiciac ha vsyklada tento answer string
-
-to co napisem sa napise za tie 2 stringy kde su same nul chary a je tam volne miesto a potom tam jeedna funckia kde ide parameter '8' tak ta porovnava to co je v EBX s tym miestom pricom v EBX je return value z tej funckie ktora kopiruje veci z velkeho stringu do toho co ma 8 characterov a ta return value sa dostane do EBX vec instruckiu ze MOVE EBX,AL
+# SPAASM - Systémové programovanie a assemblery
+## Zadanie č.3 - Statická a dynamická analýza programu
+### Autor: Marek Čederle
 
 
-I4561AsEmblerySuPOhodicka2x3XzgvwpqLJfBCDnFMH90KNG78QRtTUVWjYZ (dlzka 62, cize na var[offset] if offset = 62 (0x3e) tak tam je null char)
+## Vypracovanie
+
+Na vypracovanie úloh som použil nástroje:
+- `HxD`: Hex Editor
+- `Ghidra`: Reverse Engineering Framework
 
 
-      (OFFSET vo velkom stringu)
-char    dec     hex
-M       43      0x2b
-a       24      0x18
-r       12      0xc
-e       11      0xb
-k       23      0x17
-\0      62      0x3e
+1. Správna dĺžka akceptovaného reťazca je 8 znakov. Pri disassemblingu som zistil že funkcia ktorá načítava zadávaný reťazec ukladá svoju návratovú hodnotu do premennej ktorá sa potom porovnáva s hodnotou 8 a vtedy sa vykonávajú ďalšie časti programu. Táto hodnota sa opakuje vo viacerých nasledujúsich častiach programu čo ale spomeniem v ďalších úlohách.
+2. Správny reťazec je `FIITgeek`. Program funguje nasledovne:
+    - Program pomocou funkcie `GetDlgItemTextA` načíta reťazec a uloží ho na adresu `0x00403058`, pričom daná funkcia pri úspechu vráti počet znakov reťazca. Ak je táto hodnota iná od 8 tak sa nastaví výstupná hláška na `Wrong !` a zobrazí sa okno s touto hláškou. Ak je hodnota 8, tak sa zavolá funkcia ktorej parametre sú dva reťazce (`I4561AsEmblerySuPOhodicka2x3XzgvwpqLJfBCDnFMH90KNG78QRtTUVWjYZ`, `J#ki80Ys`) pričom úlohou danej funkcie je skopírovať znaky z prvého reťazca do druhého reťazca na určené pozície. Takto sa tam skopíruje reťazec `FIITgeek` znak po znaku. Táto funkcie síce nepriradzuje svoju návratovú hodnotu žiadnej premennej ale vráti adresu reťazca `J#ki80Ys`  (teraz už `FIITgeek`), ktorá je uložená v registri `EAX`. Tá sa následne skopíruje do registra `EBX`. Následne sa zavolá ďalšia funkcia, ktorej parametre sú adresa načítaného reťazca a dĺžka očakávaného reťazca. Táto funkcia následne porovnáva znak po znaku reťazec v `EBX` a reťazec na adrese `0x00403058` a ak sa zhodujú tak sa pomocou návratovej hodnoty nastaví register `EAX` na `0x1` a následne sa porovnáva s konštantou `0x1` čo znamená že sa rovnajú a nastaví sa výstupná hláška na `Right !` a zobrazí sa okno s touto hláškou. Ak sa reťazce nezhodujú tak sa nastaví výstupná hláška na `Wrong !` a zobrazí sa okno s touto hláškou.
+3. 
+    - `DialogBoxParam`
+        - Argumenty: 
+            - ```c++
+                HINSTANCE hInstance,
+                LPCSTR    lpTemplateName,
+                HWND      hWndParent,
+                DLGPROC   lpDialogFunc,
+                LPARAM    dwInitParam
+        - Návratová hodnota: `INT_PTR`, ak funkcia uspeje, návratovou hodnotou je hodnota parametra `nResult` uvedená vo volaní funkcie EndDialog použitej na ukončenie dialógového okna. Ak funkcia zlyhá, pretože parameter `hWndParent` je neplatný, návratová hodnota je nula. Funkcia v tomto prípade vracia nulu kvôli kompatibilite s predchádzajúcimi verziami systému Windows. Ak funkcia zlyhá z akéhokoľvek iného dôvodu, návratová hodnota je -1.
+        - Popis: Vytvorí dialógové okno zo šablóny dialógového okna. Pred zobrazením dialógového okna funkcia odovzdá procedúre dialógového okna hodnotu definovanú aplikáciou ako parameter `lParam` správy `WM_INITDIALOG`. Aplikácia môže túto hodnotu použiť na inicializáciu ovládacích prvkov dialógového okna.
+    - `GetDlgItemText`
+        - Argumenty: 
+            - ```c++
+                HWND  hDlg,
+                int   nIDDlgItem,
+                LPSTR lpString,
+                int   cchMax
+        - Návratová hodnota: Ak funkcia uspeje, návratová hodnota udáva počet znakov skopírovaných do vyrovnávacej pamäte bez koncového nulového znaku. Ak funkcia zlyhá, návratová hodnota je nula.
+        - Popis: Získa názov alebo text priradený k ovládaciemu prvku v dialógovom okne.
+    - `MessageBoxA`
+        - Argumenty: 
+            - ```c++
+                HWND    hWnd,
+                LPCTSTR lpText,
+                LPCTSTR lpCaption,
+                UINT    uType
+        - Návratová hodnota: Vracia celočíselnú hodnotu, ktorá označuje, na ktoré tlačidlo používateľ klikol. Ak funkcia zlyhá, návratová hodnota je nula.
+        - Popis: Zobrazí dialógové okno, ktoré obsahuje systémovú ikonu, sadu tlačidiel a krátku správu špecifickú pre aplikáciu, napríklad informácie o stave alebo chybe.
+4. `GetDlgItemText` sa volá na adrese `0x00401097` a získa text, ktorý bol napísaný v dialógovom okne.
+5. `DialogBoxParam` sa volá na adrese `0x0040101e` a vytvorí dialógové okno zo šablóny dialógového okna.
+6. `MessageBox` sa volá na adrese `0x004010ea` a pri správnom zadaní reťazca sa zobrazí hláška `Right !`.
+7. Správny reťazec je teraz `Marek`. Nižšie je napísaný postup ktorým som to dosiahol a čo som zmenil.
 
-- final riesenie -> Marek
-- na 3 miestach zmenene miesto cisla 8 cislo 5 ako velkost tohos stringu
-    - return value funkcie kde sa to kopiruje
-    - potom v if condition v hlavnej funkcii
-    - a potom argument v porovnavacej funkcii
-- inak zmenen offsety v kopirovacej funkcii a potom pridane nopy aby sedeli instrukcie
+Najskôr som skúšal to napasovať na reťazec `marekced` s inštrukciami tak, že pomením iba offsety, ale to sa mi nedarilo pretože mi nesedeli dĺžky jednotlivých inštrukcií, tak som potom zvolil cestu že skrátim retazec na `Marek` napíšem inštrukcie ako potrebujem a zvyšok čo mi zostane (aby sedeli počty a adresy inštrukcí) doplním inštrukciami `NOP`.
 
-Kopirovacia funkcia + return value:
-|                      POVODVNE                    |                         NOVE                          |
+I4561AsEmblerySuPOhodicka2x3XzgvwpqLJfBCDnFMH90KNG78QRtTUVWjYZ (dĺžka 62, čiže na variable[offset] pričom offset = 62 (0x3e) sa nachádza null char, ktorý tiež potrebujem skopírovať)
+
+**OFFSETy vo veľkom reťazci**
+| char |   dec   |   hex    |
+|------|---------|----------|
+| M    |    43   |   0x2b   |
+| a    |    24   |   0x18   |
+| r    |    12   |   0xc    |
+| e    |    11   |   0xb    |
+| k    |    23   |   0x17   |
+| \0   |    62   |   0x3e   |
+
+- Zmenené offsety v kopírovacej funkcii a potom pridané NOPy, aby sedeli inštrukcie
+- Na 3 miestach zmenené miesto čísla 8 číslo 5 ako veľkosť reťazca:
+    - návratová hodnota funkcie, kde sa deje kopírovanie reťazca
+    - if podmienka v hlavnej funkcii
+    - argument v porovnávacej funkcii
+
+**Kopírovacia funkcia + návratová hodnota**
+|                      Pôvodné                     |                         Nové                          |
 |--------------------------------------------------|-------------------------------------------------------|
-| 00401146  PUSH   EBP                             |   00401146   PUSH   EBP                               |
+| 00401146  PUSH   EBP                             |   00401146   PUSH    EBP                              |
 | 00401147   MOV   EBP ,ESP                        |   00401147    MOV    EBP,ESP                          |
-| 00401149  PUSH   ESI                             |   00401149   PUSH   ESI                               |
-| 0040114a  PUSH   EDI                             |   0040114a   PUSH   EDI                               |
+| 00401149  PUSH   ESI                             |   00401149   PUSH    ESI                              |
+| 0040114a  PUSH   EDI                             |   0040114a   PUSH    EDI                              |
 | 0040114b   XOR   EAX ,EAX                        |   0040114b    XOR    EAX,EAX                          |
 | 0040114d   MOV   ESI ,dword ptr [EBP + param_1]  |   0040114d    MOV    ESI,dword ptr [EBP + param_1]    |
 | 00401150   MOV   EDI ,dword ptr [EBP + param_2]  |   00401150    MOV    EDI,dword ptr [EBP + param_2]    |
@@ -56,43 +99,18 @@ Kopirovacia funkcia + return value:
 | 00401185  LEAVE                                  |   00401185   LEAVE                                    |
 | 00401186   RET   0x8                             |   00401186    RET    0x5                              |
 
-if condition:
-|          POVODVNE         |             NOVE           |
+**if podmienka v hlavnej funkcii**
+|          Pôvodné          |             Nové           |
 |---------------------------|----------------------------|
 | 0040109d  CMP   EAX,0x8   |   0040109d  CMP   EAX,0x5  |
 
-argument dalsej funckie:
-|           POVODVNE          |           NOVE             |
-|-----------------------------|----------------------------|
-| 004010ba  MOV   EAX,0x8     |   004010ba  MOV   EAX,0x5  |
+**argument v porovnávacej funkcii**
+|           Pôvodné         |           Nové             |
+|---------------------------|----------------------------|
+| 004010ba  MOV   EAX,0x8   |   004010ba  MOV   EAX,0x5  |
 
 
-
-
-
-# SPAASM - Systémové programovanie a assemblery
-## Zadanie č.3 - Statická a dynamická analýza programu
-### Autor: Marek Čederle
-
-Na vypracovanie úloh som použil nástroje:
-- `HxD`: Hex Editor
-- `Ghidra`: Reverse Engineering Framework
-
-
-1. Správna dĺžka akceptovaného reťazca je 8 znakov. Pri disassemblingu som zistil že funkcia ktorá načítava zadávaný reťazec ukladá svoju návratovú hodnotu do premennej ktorá sa potom porovnáva s hodnotou 8 a vtedy sa vykonávajú ďalšie časti programu. Táto hodnota sa opakuje vo viacerých nasledujúsich častiach programu čo ale spomeniem v ďalších úlohách.
-2. Správny reťazec je `FIITgeek`. Program funguje nasledovne:
-    - Program pomocou funkcie `GetDlgItemTextA` načíta reťazec a uloží ho na adresu `0x00403058`, pričom daná funkcia pri úspechu vráti počet znakov reťazca. Ak je táto hodnota iná od 8 tak sa nastaví výstupná hláška na `Wrong!` a zobrazí sa okno s touto hláškou. Ak je hodnota 8, tak sa zavolá funkcia ktorej parametre sú dva reťazce (`I4561AsEmblerySuPOhodicka2x3XzgvwpqLJfBCDnFMH90KNG78QRtTUVWjYZ`, `J#ki80Ys`) pričom úlohou danej funkcie je skopírovať znaky z prvého reťazca do druhého reťazca na určené pozície. Takto sa tam skopíruje reťazec `FIITgeek` znak po znaku. Táto funkcie síce nepriradzuje svoju návratovú hodnotu žiadnej premennej ale vráti adresu reťazca `J#ki80Ys`  (teraz už `FIITgeek`), ktorá je uložená v registri `EAX`. Následne sa zavolá ďalšia funkcia, ktorej parametre sú adresa načítaného reťazca a dĺžka očakávaného reťazca. Táto funkcia následne porovnáva znak po znaku reťazec v `EAX` a reťazec na adrese `0x00403058` a ak sa zhodujú tak sa pomocou návratovej hodnoty nastaví register `EAX` na `0x1` a následne sa porovnáva s konštantou `0x1` čo znamená že sa rovnajú a nastaví sa výstupná hláška na `Correct!` a zobrazí sa okno s touto hláškou. Ak sa reťazce nezhodujú tak sa nastaví výstupná hláška na `Wrong!` a zobrazí sa okno s touto hláškou.
-3. 
-4. 
-5. 
-6. 
-7. najskor som skusal to napasovat s instrukciami tak ze pomenim iba offsety ale to sa mi nedarilo tak som potom zvolil tuto moznost
-
-
-| Section     | Value        |
-|-------------|--------------|
-| Name        | John         |
-| Age         | 30           |
-| --- More Info --- | --- | --- | --- |
-| Hobby       | Sport | Music | Reading |
-| Skills      | C++   | Python | Rust   |
+## Zdroje
+- [DialogBoxParamA](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-dialogboxparama)
+- [GetDlgItemTextA](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getdlgitemtexta)
+- [MessageBoxA](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-messageboxa)
