@@ -111,6 +111,7 @@ I4561AsEmblerySuPOhodicka2x3XzgvwpqLJfBCDnFMH90KNG78QRtTUVWjYZ (dĺžka 62, či�
 
 
 ## Zdroje
+- [Ghidra](https://github.com/NationalSecurityAgency/ghidra)
 - [DialogBoxParamA](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-dialogboxparama)
 - [GetDlgItemTextA](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getdlgitemtexta)
 - [MessageBoxA](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-messageboxa)
