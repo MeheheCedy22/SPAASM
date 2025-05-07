@@ -20,6 +20,7 @@
 # zadanie3
 3zadanie/not_src
 3zadanie/strstr-disassembly*
+3zadanie/*.exe
 
 # all
 *.pdf
