@@ -9,20 +9,24 @@
 1zadanie/*.txt
 
 # zadanie 2
-2zadanie/not_src
-2zadanie/**
-!2zadanie/*.c
-!2zadanie/*.h
-!2zadanie/Makefile
-!2zadanie/start_tmux.sh
+2zadanie/not_src/Materialy_k_cviceniam_II
+2zadanie/not_src/medziprocesova_komunikacia_klient_server-_1_2_3_4_pomocka_2025.c
+2zadanie/*.o
+2zadanie/*.log
 2zadanie/stash*
+2zadanie/shell
+2zadanie/TODO.md
 
 # zadanie3
-3zadanie/not_src
+3zadanie/not_src/ghidra_11.3.2_PUBLIC
 3zadanie/strstr-disassembly*
-3zadanie/*.exe
+3zadanie/3zadanie.pdf
 
 # all
-*.pdf
 *.zip
 .vscode/
+
+# zadania 
+!1zadanie/Forma_odovzdanej_dokumentacie.pdf
+!1zadanie/SPaASM_zadanie_1-2025.pdf
+!2zadanie/not_src/SPaASM_zadanie_2-2025.pdf
